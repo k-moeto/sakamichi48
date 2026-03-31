@@ -1,0 +1,28 @@
+{
+  "name": "sakamichi48",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Composer-centric song network for Sakamichi and major 48 groups",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @sakamichi48/api & npm run dev --workspace @sakamichi48/web",
+    "dev:api": "npm run dev --workspace @sakamichi48/api",
+    "dev:web": "npm run dev --workspace @sakamichi48/web",
+    "build": "npm run build --workspace @sakamichi48/api && npm run build --workspace @sakamichi48/web && npm run build --workspace @sakamichi48/scraper",
+    "typecheck": "npm run typecheck --workspace @sakamichi48/api && npm run typecheck --workspace @sakamichi48/web && npm run typecheck --workspace @sakamichi48/scraper",
+    "test:scraper": "npm run test --workspace @sakamichi48/scraper",
+    "scrape:ingest": "npm run scrape --workspace @sakamichi48/scraper -- --input=tmp/utanet-enriched.json",
+    "scrape:csv": "npm run export:csv --workspace @sakamichi48/scraper -- --input=tmp/utanet-enriched.json --out-dir=tmp/csv",
+    "db:import:csv": "npm run import:csv --workspace @sakamichi48/scraper",
+    "db:import:csv:reset": "npm run import:csv --workspace @sakamichi48/scraper -- --reset",
+    "data:snapshot": "npm run data:snapshot --workspace @sakamichi48/api",
+    "data:check": "npm run data:check --workspace @sakamichi48/api",
+    "data:refresh": "npm run data:snapshot && npm run data:check",
+    "batch:refresh": "npm run scrape --workspace @sakamichi48/scraper && npm run data:refresh"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

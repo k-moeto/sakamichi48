@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: sakamichi48-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sakamichi48
+      POSTGRES_USER: sakamichi
+      POSTGRES_PASSWORD: sakamichi
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sakamichi -d sakamichi48"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

@@ -1,0 +1,27 @@
+{
+  "name": "@sakamichi48/scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "scrape": "tsx src/index.ts",
+    "export:csv": "tsx src/export-csv.ts",
+    "import:csv": "bash ./scripts/import-csv-to-db.sh"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "drizzle-orm": "^0.44.6",
+    "playwright": "^1.55.1",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

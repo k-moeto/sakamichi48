@@ -1,0 +1,20 @@
+@import url("https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@400;500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "M PLUS 1p", "Hiragino Kaku Gothic ProN", sans-serif;
+  color: #172236;
+  background: radial-gradient(circle at top left, #e7f0ff 0%, #f9fcff 45%, #f4f1ff 100%);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}

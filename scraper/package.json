@@ -1,0 +1,20 @@
+{
+  "name": "sakamichi48-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "scrape": "tsx src/index.ts",
+    "scrape:nogizaka": "tsx src/index.ts --group nogizaka46",
+    "scrape:akb": "tsx src/index.ts --group akb48"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "csv-writer": "^1.6.0",
+    "playwright": "^1.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
