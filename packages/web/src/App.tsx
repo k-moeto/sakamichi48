@@ -8,6 +8,17 @@ import type { ComposerGraph, Creator, Group, SongDetail, SongListItem } from "./
 
 const FILTER_AKIMOTO = "秋元康";
 type GraphMode = "composer" | "group";
+const CREDIT_ROLE_LABEL: Record<SongDetail["credits"][number]["role"], string> = {
+  lyricist: "作詞",
+  composer: "作曲",
+  arranger: "編曲"
+};
+const POSITION_LABEL: Record<SongDetail["formation"][number]["positionType"], string> = {
+  center: "センター",
+  fukujin: "福神",
+  senbatsu: "選抜",
+  under: "アンダー"
+};
 
 export default function App(): JSX.Element {
   const [groups, setGroups] = useState<Group[]>([]);
@@ -163,23 +174,23 @@ export default function App(): JSX.Element {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-4 pb-12 pt-8 sm:px-8">
-      <section className="rounded-3xl bg-white/80 p-6 shadow-glow backdrop-blur">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-800">Sakamichi48 Composer Network</h1>
-        <p className="mt-2 text-sm text-slate-600">
+    <main className="mx-auto max-w-6xl px-4 pb-12 pt-8 sm:px-6">
+      <section className="border border-black bg-white p-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-black">Sakamichi48 Composer Network</h1>
+        <p className="mt-2 text-sm text-zinc-700">
           坂道シリーズ + 主要48グループの楽曲を、作曲家中心のネットワークとして探索するMVP。
         </p>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
           <input
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none ring-sky-200 transition focus:ring"
+            className="w-full border border-black bg-white px-4 py-2 text-sm outline-none"
             placeholder="曲名 / 作曲家 / リリース名で検索"
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
 
           <select
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            className="border border-black bg-white px-3 py-2 text-sm"
             value={selectedGroupId ?? ""}
             onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : undefined)}
           >
@@ -191,7 +202,7 @@ export default function App(): JSX.Element {
             ))}
           </select>
 
-          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+          <label className="flex items-center gap-2 border border-black bg-white px-3 py-2 text-sm">
             <input type="checkbox" checked={hideAkimoto} onChange={(event) => setHideAkimoto(event.target.checked)} />
             秋元康を除外
           </label>
@@ -199,30 +210,30 @@ export default function App(): JSX.Element {
       </section>
 
       <Tabs.Root defaultValue="songs" className="mt-6">
-        <Tabs.List className="grid grid-cols-3 rounded-2xl bg-white/70 p-1 shadow">
+        <Tabs.List className="grid grid-cols-3 border border-black bg-white p-1">
           <Tabs.Trigger
             value="songs"
-            className="rounded-xl px-3 py-2 text-sm data-[state=active]:bg-slate-900 data-[state=active]:text-white"
+            className="px-3 py-2 text-sm data-[state=active]:bg-black data-[state=active]:text-white"
           >
             楽曲
           </Tabs.Trigger>
           <Tabs.Trigger
             value="creators"
-            className="rounded-xl px-3 py-2 text-sm data-[state=active]:bg-slate-900 data-[state=active]:text-white"
+            className="px-3 py-2 text-sm data-[state=active]:bg-black data-[state=active]:text-white"
           >
             作曲家
           </Tabs.Trigger>
           <Tabs.Trigger
             value="graph"
-            className="rounded-xl px-3 py-2 text-sm data-[state=active]:bg-slate-900 data-[state=active]:text-white"
+            className="px-3 py-2 text-sm data-[state=active]:bg-black data-[state=active]:text-white"
           >
             ネットワーク
           </Tabs.Trigger>
         </Tabs.List>
 
         <Tabs.Content value="songs" className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-          <section className="rounded-2xl bg-white/80 p-4 shadow">
-            <h2 className="mb-3 text-sm font-semibold text-slate-700">楽曲一覧 ({filteredSongs.length})</h2>
+          <section className="border border-black bg-white p-4">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-800">楽曲一覧 ({filteredSongs.length})</h2>
             <ul className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
               {filteredSongs.map((song) => (
                 <li key={song.songId}>
@@ -231,11 +242,11 @@ export default function App(): JSX.Element {
                     onClick={() => {
                       handleSongSelect(song.songId).catch(console.error);
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left hover:border-sky-300"
+                    className="w-full border border-zinc-300 bg-white px-3 py-2 text-left hover:border-black"
                   >
-                    <p className="text-sm font-medium text-slate-800">{song.songTitle}</p>
-                    <p className="text-xs text-slate-500">
-                      {song.groupName} / {song.releaseTitle}
+                    <p className="text-sm font-medium text-black">{song.songTitle}</p>
+                    <p className="text-xs text-zinc-500">
+                      {song.groupName} / {song.releaseTitle} / {song.releaseYear ?? "-"}
                     </p>
                   </button>
                 </li>
@@ -243,38 +254,53 @@ export default function App(): JSX.Element {
             </ul>
           </section>
 
-          <section className="rounded-2xl bg-white/80 p-4 shadow">
-            <h2 className="mb-3 text-sm font-semibold text-slate-700">楽曲詳細</h2>
+          <section className="border border-black bg-white p-4">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-800">楽曲詳細</h2>
             {selectedSong ? (
-              <article className="space-y-3 text-sm text-slate-700">
+              <article className="space-y-3 text-sm text-zinc-700">
                 <div>
-                  <p className="text-lg font-semibold text-slate-900">{selectedSong.title}</p>
-                  <p className="text-xs text-slate-500">
-                    {selectedSong.groupName} / {selectedSong.releaseTitle} / {selectedSong.releaseDate ?? "-"}
+                  <p className="text-lg font-semibold text-black">{selectedSong.title}</p>
+                  <p className="text-xs text-zinc-500">
+                    {selectedSong.groupName} / {selectedSong.releaseTitle} / {selectedSong.releaseYear ?? "-"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Credits</p>
+                  <p className="text-xs tracking-wide text-zinc-500">クレジット</p>
                   <ul className="mt-1 space-y-1">
                     {selectedSong.credits.map((credit) => (
-                      <li key={`${credit.role}-${credit.creatorId}`} className="rounded-lg bg-slate-50 px-3 py-2">
-                        <span className="mr-2 inline-block min-w-14 text-xs font-bold uppercase text-slate-500">
-                          {credit.role}
+                      <li key={`${credit.role}-${credit.creatorId}`} className="border border-zinc-200 bg-zinc-50 px-3 py-2">
+                        <span className="mr-2 inline-block min-w-14 text-xs font-bold text-zinc-500">
+                          {CREDIT_ROLE_LABEL[credit.role]}
                         </span>
                         {credit.creatorName}
                       </li>
                     ))}
                   </ul>
                 </div>
+                <div>
+                  <p className="text-xs tracking-wide text-zinc-500">フォーメーション</p>
+                  {selectedSong.formation.length > 0 ? (
+                    <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+                      {selectedSong.formation.map((member, idx) => (
+                        <li key={`${member.memberName}-${idx}`} className="border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs">
+                          {member.memberName}（{POSITION_LABEL[member.positionType]}
+                          {member.rowNumber ? ` / ${member.rowNumber}列目` : ""}）
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-1 text-xs text-zinc-500">未取得（ファンサイト由来データを収集中）</p>
+                  )}
+                </div>
               </article>
             ) : (
-              <p className="text-sm text-slate-500">左の一覧から楽曲を選択してください。</p>
+              <p className="text-sm text-zinc-500">左の一覧から楽曲を選択してください。</p>
             )}
           </section>
         </Tabs.Content>
 
-        <Tabs.Content value="creators" className="mt-4 rounded-2xl bg-white/80 p-4 shadow">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">作曲家一覧 ({filteredCreators.length})</h2>
+        <Tabs.Content value="creators" className="mt-4 border border-black bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-800">作曲家一覧 ({filteredCreators.length})</h2>
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {filteredCreators.map((creator) => (
               <li key={creator.id}>
@@ -283,12 +309,12 @@ export default function App(): JSX.Element {
                   onClick={() => handleCreatorSelect(creator)}
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
                     selectedCreator?.id === creator.id
-                      ? "border-sky-500 bg-sky-50"
-                      : "border-slate-200 bg-white hover:border-sky-300"
+                      ? "border-black bg-zinc-100"
+                      : "border-zinc-300 bg-white hover:border-black"
                   }`}
                 >
-                  <p className="font-medium text-slate-900">{creator.name}</p>
-                  <p className="text-xs text-slate-500">{creator.songCount} credits</p>
+                  <p className="font-medium text-black">{creator.name}</p>
+                  <p className="text-xs text-zinc-500">{creator.songCount} credits</p>
                 </button>
               </li>
             ))}
@@ -296,26 +322,26 @@ export default function App(): JSX.Element {
         </Tabs.Content>
 
         <Tabs.Content value="graph" className="mt-4 space-y-3">
-          <section className="rounded-2xl bg-white/80 p-4 shadow">
+          <section className="border border-black bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-slate-700">ネットワークビュー</h2>
-                <p className="mt-1 text-xs text-slate-500">
+                <h2 className="text-sm font-semibold text-zinc-800">ネットワークビュー</h2>
+                <p className="mt-1 text-xs text-zinc-500">
                   実線: 作曲 / 破線: 編曲 / 点線: 作詞。作曲家ビューとグループビューを切り替えて探索できます。
                 </p>
               </div>
 
-              <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs">
+              <div className="inline-flex border border-black bg-white p-1 text-xs">
                 <button
                   type="button"
-                  className={`rounded-lg px-3 py-1.5 ${graphMode === "composer" ? "bg-slate-900 text-white" : "text-slate-700"}`}
+                  className={`px-3 py-1.5 ${graphMode === "composer" ? "bg-black text-white" : "text-zinc-700"}`}
                   onClick={() => setGraphMode("composer")}
                 >
                   作曲家
                 </button>
                 <button
                   type="button"
-                  className={`rounded-lg px-3 py-1.5 ${graphMode === "group" ? "bg-slate-900 text-white" : "text-slate-700"}`}
+                  className={`px-3 py-1.5 ${graphMode === "group" ? "bg-black text-white" : "text-zinc-700"}`}
                   onClick={() => setGraphMode("group")}
                 >
                   グループ
@@ -324,14 +350,14 @@ export default function App(): JSX.Element {
             </div>
 
             {graphMode === "composer" ? (
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-zinc-500">
                 対象作曲家: {selectedCreator?.name ?? "未選択（作曲家タブから選択してください）"}
               </p>
             ) : (
-              <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+              <div className="mt-2 flex items-center gap-2 text-xs text-zinc-600">
                 <span>対象グループ:</span>
                 <select
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1"
+                  className="border border-black bg-white px-2 py-1"
                   value={selectedGroupId ?? ""}
                   onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : undefined)}
                 >
@@ -345,12 +371,12 @@ export default function App(): JSX.Element {
             )}
           </section>
 
-          {graphLoading ? <p className="text-sm text-slate-500">グラフを読み込み中...</p> : null}
+          {graphLoading ? <p className="text-sm text-zinc-500">グラフを読み込み中...</p> : null}
           <GraphView graph={graph} />
         </Tabs.Content>
       </Tabs.Root>
 
-      {loading ? <p className="mt-4 text-sm text-slate-500">Loading...</p> : null}
+      {loading ? <p className="mt-4 text-sm text-zinc-500">Loading...</p> : null}
     </main>
   );
 }

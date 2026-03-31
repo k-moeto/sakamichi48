@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { asc, eq, sql } from "drizzle-orm";
 
 import { connection, db } from "../db/client.js";
-import { creators, groups, releases, songCredits, songs } from "../db/schema.js";
+import { creators, groups, members, releases, songCredits, songFormations, songs } from "../db/schema.js";
 
 type CreditRole = "lyricist" | "composer" | "arranger";
 
@@ -28,10 +28,12 @@ type SongListWithCredits = {
   releaseType: string;
   releaseNumber: number | null;
   releaseDate: string | null;
+  releaseYear: number | null;
   groupId: number;
   groupName: string;
   groupCategory: "sakamichi" | "48";
   credits: SongCredit[];
+  formation: SongFormationEntry[];
 };
 
 type SongDetail = {
@@ -46,6 +48,15 @@ type SongDetail = {
   groupName: string;
   releaseDate: string | null;
   credits: SongCredit[];
+  releaseYear: number | null;
+  formation: SongFormationEntry[];
+};
+
+type SongFormationEntry = {
+  memberName: string;
+  memberRomaji: string | null;
+  positionType: "center" | "fukujin" | "senbatsu" | "under";
+  rowNumber: number | null;
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,6 +72,14 @@ function toIsoDate(value: unknown): string | null {
     return null;
   }
   return String(value);
+}
+
+function toReleaseYear(date: string | null): number | null {
+  if (!date) {
+    return null;
+  }
+  const year = Number(date.slice(0, 4));
+  return Number.isNaN(year) ? null : year;
 }
 
 async function main(): Promise<void> {
@@ -136,6 +155,30 @@ async function main(): Promise<void> {
     creditsBySongId.set(row.songId, list);
   }
 
+  const formationRows = await db
+    .select({
+      songId: songFormations.songId,
+      memberName: members.name,
+      memberRomaji: members.nameRomaji,
+      positionType: songFormations.positionType,
+      rowNumber: songFormations.rowNumber
+    })
+    .from(songFormations)
+    .innerJoin(members, eq(songFormations.memberId, members.id))
+    .orderBy(asc(songFormations.songId), asc(songFormations.rowNumber), asc(members.id));
+
+  const formationBySongId = new Map<number, SongFormationEntry[]>();
+  for (const row of formationRows) {
+    const list = formationBySongId.get(row.songId) ?? [];
+    list.push({
+      memberName: row.memberName,
+      memberRomaji: row.memberRomaji,
+      positionType: row.positionType,
+      rowNumber: row.rowNumber
+    });
+    formationBySongId.set(row.songId, list);
+  }
+
   const songsWithCredits: SongListWithCredits[] = songRows.map((row) => ({
     songId: row.songId,
     songTitle: row.songTitle,
@@ -148,10 +191,12 @@ async function main(): Promise<void> {
     releaseType: row.releaseType,
     releaseNumber: row.releaseNumber,
     releaseDate: toIsoDate(row.releaseDate),
+    releaseYear: toReleaseYear(toIsoDate(row.releaseDate)),
     groupId: row.groupId,
     groupName: row.groupName,
     groupCategory: row.groupCategory,
-    credits: creditsBySongId.get(row.songId) ?? []
+    credits: creditsBySongId.get(row.songId) ?? [],
+    formation: formationBySongId.get(row.songId) ?? []
   }));
 
   const lyricsBySongId = new Map<number, string | null>();
@@ -172,7 +217,9 @@ async function main(): Promise<void> {
       releaseTitle: row.releaseTitle,
       groupName: row.groupName,
       releaseDate: row.releaseDate,
-      credits: row.credits
+      releaseYear: row.releaseYear,
+      credits: row.credits,
+      formation: row.formation
     };
   }
 

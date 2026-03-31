@@ -17,10 +17,26 @@ interface CsvSong {
   lyricist: string;
   composer: string;
   arranger: string;
-  openingLyrics: string;
   fullLyrics: string;
   songUrl: string;
 }
+
+const COLUMN_ALIASES: Record<string, keyof CsvSong> = {
+  song_id: "songId",
+  曲ID: "songId",
+  title: "title",
+  曲名: "title",
+  lyricist: "lyricist",
+  作詞: "lyricist",
+  composer: "composer",
+  作曲: "composer",
+  arranger: "arranger",
+  編曲: "arranger",
+  full_lyrics: "fullLyrics",
+  歌詞: "fullLyrics",
+  song_url: "songUrl",
+  楽曲URL: "songUrl",
+};
 
 interface GroupDef {
   csvFile: string;
@@ -108,17 +124,31 @@ function readCsvFile(filename: string): CsvSong[] {
 
   const text = fs.readFileSync(filepath, "utf-8");
   const rows = parseCsv(text);
+  const [header, ...dataRows] = rows;
+  if (!header) return [];
 
-  // Skip header row
-  return rows.slice(1).map((cols) => ({
-    songId: cols[0] ?? "",
-    title: cols[1] ?? "",
-    lyricist: cols[2] ?? "",
-    composer: cols[3] ?? "",
-    arranger: cols[4] ?? "",
-    openingLyrics: cols[5] ?? "",
-    fullLyrics: cols[6] ?? "",
-    songUrl: cols[7] ?? "",
+  const indexByKey = new Map<keyof CsvSong, number>();
+  header.forEach((name, index) => {
+    const normalized = name.normalize("NFKC").trim();
+    const key = COLUMN_ALIASES[normalized];
+    if (key) {
+      indexByKey.set(key, index);
+    }
+  });
+
+  function get(row: string[], key: keyof CsvSong): string {
+    const idx = indexByKey.get(key);
+    return idx === undefined ? "" : row[idx] ?? "";
+  }
+
+  return dataRows.map((cols) => ({
+    songId: get(cols, "songId"),
+    title: get(cols, "title"),
+    lyricist: get(cols, "lyricist"),
+    composer: get(cols, "composer"),
+    arranger: get(cols, "arranger"),
+    fullLyrics: get(cols, "fullLyrics"),
+    songUrl: get(cols, "songUrl"),
   }));
 }
 
