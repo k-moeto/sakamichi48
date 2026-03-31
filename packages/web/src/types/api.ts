@@ -25,6 +25,7 @@ export type SongListItem = {
   releaseType: string;
   releaseNumber: number | null;
   releaseDate: string | null;
+  releaseYear: number | null;
   groupId: number;
   groupName: string;
   groupCategory: string;
@@ -41,11 +42,18 @@ export type SongDetail = {
   releaseTitle: string;
   groupName: string;
   releaseDate: string | null;
+  releaseYear: number | null;
   credits: Array<{
     role: "lyricist" | "composer" | "arranger";
     creatorId: number;
     creatorName: string;
     creatorRomaji: string | null;
+  }>;
+  formation: Array<{
+    memberName: string;
+    memberRomaji: string | null;
+    positionType: "center" | "fukujin" | "senbatsu" | "under";
+    rowNumber: number | null;
   }>;
 };
 

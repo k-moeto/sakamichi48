@@ -11,7 +11,8 @@ import {
   parseUtaNetAlbumIndexPage,
   parseUtaNetArtistPage
 } from "./parsers/utanet.js";
-import type { GroupSeed, ScrapedRelease, ScrapedSong } from "./types/models.js";
+import { parseFormationsFromDiscographySection, parseFormationsFromReleasePage } from "./parsers/wikipedia-formation.js";
+import type { GroupSeed, ScrapedRelease, ScrapedSong, SongFormation } from "./types/models.js";
 
 function parseArgs(): { dryRun: boolean; group?: string; limit: number; out?: string; input?: string } {
   const args = process.argv.slice(2);
@@ -35,6 +36,55 @@ function pickGroups(group?: string): GroupSeed[] {
     return GROUPS;
   }
   return GROUPS.filter((g) => g.key === group);
+}
+
+function normalizeSongTitle(title: string): string {
+  return title
+    .normalize("NFKC")
+    .replace(/[「」『』""〝〟]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function enrichReleasesWithFormations(releases: ScrapedRelease[]): Promise<void> {
+  for (const release of releases) {
+    if (!release.wikipediaUrl.includes("wikipedia.org/wiki/")) {
+      continue;
+    }
+
+    try {
+      const html = await fetchHtml(release.wikipediaUrl);
+      const formations = parseFormationsFromReleasePage(html, release.songs[0]?.title);
+      const normalizedFormations =
+        formations.size > 0 ? formations : parseFormationsFromDiscographySection(html);
+      if (normalizedFormations.size === 0) {
+        continue;
+      }
+
+      const formationByTitle = new Map<string, SongFormation>();
+      for (const [title, formation] of normalizedFormations.entries()) {
+        formationByTitle.set(normalizeSongTitle(title), formation);
+      }
+
+      let matched = 0;
+      for (const song of release.songs) {
+        const formation = formationByTitle.get(normalizeSongTitle(song.title));
+        if (!formation) {
+          continue;
+        }
+        song.formation = formation;
+        matched += 1;
+      }
+
+      if (matched > 0) {
+        console.log(
+          `[scraper] formations matched: group=${release.groupName} release=${release.title} songs=${matched}/${release.songs.length}`
+        );
+      }
+    } catch (error) {
+      console.warn(`[scraper] formation parse failed: group=${release.groupName} url=${release.wikipediaUrl}`, error);
+    }
+  }
 }
 
 async function scrapeGroup(group: GroupSeed, limit: number): Promise<ScrapedRelease[]> {
@@ -180,6 +230,7 @@ async function main(): Promise<void> {
     }
     for (const target of targets) {
       const releases = await scrapeGroup(target, limit);
+      await enrichReleasesWithFormations(releases);
       allReleases.push(...releases);
     }
   }

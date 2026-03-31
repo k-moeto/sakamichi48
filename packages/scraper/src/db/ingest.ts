@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "./client.js";
-import { creators, groups, releases, songCredits, songs } from "./schema.js";
+import { creators, groups, members, releases, songCredits, songFormations, songs } from "./schema.js";
 import { normalizeCreatorName } from "../lib/normalizer.js";
 import type { ScrapedRelease } from "../types/models.js";
 
@@ -112,6 +112,50 @@ async function upsertCredit(songId: number, creatorId: number, role: "lyricist" 
   await db.insert(songCredits).values({ songId, creatorId, role });
 }
 
+async function upsertMember(groupId: number, name: string): Promise<number> {
+  const normalized = normalizeCreatorName(name);
+  const existing = await db
+    .select()
+    .from(members)
+    .where(and(eq(members.groupId, groupId), eq(members.name, normalized)))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return requireId(existing[0], `member(${normalized})`);
+  }
+
+  const inserted = await db
+    .insert(members)
+    .values({ groupId, name: normalized })
+    .returning({ id: members.id });
+
+  return requireId(inserted[0], `member(${normalized})`);
+}
+
+async function upsertFormation(
+  songId: number,
+  memberId: number,
+  positionType: "center" | "fukujin" | "senbatsu" | "under",
+  rowNumber?: number
+): Promise<void> {
+  const existing = await db
+    .select()
+    .from(songFormations)
+    .where(and(eq(songFormations.songId, songId), eq(songFormations.memberId, memberId)))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return;
+  }
+
+  await db.insert(songFormations).values({
+    songId,
+    memberId,
+    positionType,
+    rowNumber: rowNumber ?? null
+  });
+}
+
 export async function ingestReleases(releasesData: ScrapedRelease[]): Promise<void> {
   for (const release of releasesData) {
     const groupId = await upsertGroup(release);
@@ -124,6 +168,15 @@ export async function ingestReleases(releasesData: ScrapedRelease[]): Promise<vo
         for (const creatorName of credit.names) {
           const creatorId = await upsertCreator(creatorName);
           await upsertCredit(songId, creatorId, credit.role);
+        }
+      }
+
+      if (song.formation) {
+        for (const member of song.formation.members) {
+          const memberId = await upsertMember(groupId, member.name);
+          const positionType =
+            member.isCenter ? "center" : song.formation?.formationType === "undergirls" ? "under" : "senbatsu";
+          await upsertFormation(songId, memberId, positionType, member.row);
         }
       }
     }

@@ -29,8 +29,13 @@ function parseCenter(text: string): string[] {
   for (const pattern of patterns) {
     let match;
     while ((match = pattern.exec(text)) !== null) {
-      const raw = match[1] ?? "";
-      const names = raw.split(/[、,・]/).map((n) => normalizeSpace(n)).filter(Boolean);
+      const raw = (match[1] ?? "")
+        .split(/(?:参加メンバー|選抜メンバー|メンバー|フォーメーション)\s*[：:]?/)[0]
+        ?.trim() ?? "";
+      const names = raw
+        .split(/[、,・]/)
+        .map((n) => normalizeSpace(n))
+        .filter((n) => n.length > 0 && !/[：:]/.test(n));
       centers.push(...names);
     }
   }
@@ -73,6 +78,8 @@ function parseFlatMemberList(text: string): MemberPosition[] {
 
   const cleaned = text
     .replace(/[（(]センター[：:][^）)]*[）)]/g, "")
+    .replace(/センター\s*[：:]\s*[^、,\n]+/g, "")
+    .replace(/(?:参加|選抜)?メンバー\s*[：:]/g, "")
     .replace(/[（(][^）)]*[）)]/g, "");
 
   const names = cleaned
