@@ -7,7 +7,8 @@ export type GroupKey =
   | "ske48"
   | "nmb48"
   | "hkt48"
-  | "stu48";
+  | "stu48"
+  | "ngt48";
 
 export type CreditRole = "lyricist" | "composer" | "arranger";
 

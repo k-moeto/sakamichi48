@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, "..", "data");
 const OUT_DIR = path.resolve(__dirname, "..", "packages", "web", "public", "data");
+const SONG_CACHE_DIR = path.resolve(__dirname, "..", "scraper", "cache");
 
 interface CsvSong {
   songId: string;
@@ -17,6 +18,10 @@ interface CsvSong {
   lyricist: string;
   composer: string;
   arranger: string;
+  releaseDate: string;
+  releaseYear: string;
+  releaseTitle: string;
+  releaseType: string;
   fullLyrics: string;
   songUrl: string;
 }
@@ -32,6 +37,14 @@ const COLUMN_ALIASES: Record<string, keyof CsvSong> = {
   作曲: "composer",
   arranger: "arranger",
   編曲: "arranger",
+  release_date: "releaseDate",
+  発売日: "releaseDate",
+  release_year: "releaseYear",
+  発売年: "releaseYear",
+  release_title: "releaseTitle",
+  リリース名: "releaseTitle",
+  release_type: "releaseType",
+  リリース種別: "releaseType",
   full_lyrics: "fullLyrics",
   歌詞: "fullLyrics",
   song_url: "songUrl",
@@ -55,6 +68,7 @@ const GROUP_DEFS: GroupDef[] = [
   { csvFile: "nmb48", name: "NMB48", nameRomaji: "NMB48", category: "48" },
   { csvFile: "hkt48", name: "HKT48", nameRomaji: "HKT48", category: "48" },
   { csvFile: "stu48", name: "STU48", nameRomaji: "STU48", category: "48" },
+  { csvFile: "ngt48", name: "NGT48", nameRomaji: "NGT48", category: "48" },
 ];
 
 // --- CSV Parser (handles quoted fields with commas and newlines) ---
@@ -147,6 +161,10 @@ function readCsvFile(filename: string): CsvSong[] {
     lyricist: get(cols, "lyricist"),
     composer: get(cols, "composer"),
     arranger: get(cols, "arranger"),
+    releaseDate: get(cols, "releaseDate"),
+    releaseYear: get(cols, "releaseYear"),
+    releaseTitle: get(cols, "releaseTitle"),
+    releaseType: get(cols, "releaseType"),
     fullLyrics: get(cols, "fullLyrics"),
     songUrl: get(cols, "songUrl"),
   }));
@@ -163,6 +181,94 @@ function splitCreators(field: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+function toIsoDate(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+
+  const ymd = normalized.match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/);
+  if (ymd) {
+    const y = ymd[1];
+    const m = String(Number.parseInt(ymd[2] ?? "0", 10)).padStart(2, "0");
+    const d = String(Number.parseInt(ymd[3] ?? "0", 10)).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  const yearOnly = normalized.match(/(\d{4})/);
+  if (yearOnly) {
+    return `${yearOnly[1]}-01-01`;
+  }
+  return null;
+}
+
+function toYear(value: string | null): number | null {
+  if (!value) return null;
+  const year = Number.parseInt(value.slice(0, 4), 10);
+  return Number.isFinite(year) ? year : null;
+}
+
+function releaseDateFromSongCache(songId: number): string | null {
+  const cachePath = path.join(SONG_CACHE_DIR, `https___www_uta_net_com_song_${songId}_.html`);
+  if (!fs.existsSync(cachePath)) {
+    return null;
+  }
+
+  const html = fs.readFileSync(cachePath, "utf-8");
+  const match = html.match(/発売日[:：]\s*(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/);
+  if (!match) {
+    return null;
+  }
+
+  const y = match[1];
+  const m = String(Number.parseInt(match[2] ?? "0", 10)).padStart(2, "0");
+  const d = String(Number.parseInt(match[3] ?? "0", 10)).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+type ScraperRelease = {
+  groupName: string;
+  title: string;
+  releaseType: string;
+  releaseDate?: string;
+  songs: Array<{ title: string }>;
+};
+
+function normalizeSongTitle(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+function sanitizeReleaseTitle(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.includes("Uta-Net Other Songs") ? "" : trimmed;
+}
+
+function loadReleaseMetaMap(): Map<string, { releaseTitle: string; releaseType: string; releaseDate: string | null }> {
+  const releaseMap = new Map<string, { releaseTitle: string; releaseType: string; releaseDate: string | null }>();
+  const enrichedPath = path.resolve(__dirname, "..", "packages", "scraper", "tmp", "utanet-enriched.json");
+  if (!fs.existsSync(enrichedPath)) {
+    return releaseMap;
+  }
+
+  const releases = JSON.parse(fs.readFileSync(enrichedPath, "utf-8")) as ScraperRelease[];
+  for (const release of releases) {
+    for (const song of release.songs) {
+      const key = `${release.groupName}::${normalizeSongTitle(song.title)}`;
+      if (releaseMap.has(key)) {
+        continue;
+      }
+      releaseMap.set(key, {
+        releaseTitle: sanitizeReleaseTitle(release.title),
+        releaseType: release.releaseType,
+        releaseDate: toIsoDate(release.releaseDate ?? "") ?? null
+      });
+    }
+  }
+
+  return releaseMap;
+}
+
 // --- Main build ---
 
 interface OutputGroup {
@@ -175,10 +281,19 @@ interface OutputGroup {
 interface OutputSong {
   songId: number;
   songTitle: string;
+  duration: string | null;
+  trackNumber: number | null;
+  editionType: string | null;
   groupId: number;
   groupName: string;
   groupCategory: string;
   songCategory: string;
+  releaseId: number | null;
+  releaseTitle: string;
+  releaseType: string;
+  releaseNumber: number | null;
+  releaseDate: string | null;
+  releaseYear: number | null;
   credits: Array<{
     role: "lyricist" | "composer" | "arranger";
     creatorId: number;
@@ -193,11 +308,24 @@ interface OutputSongDetail {
   groupId: number;
   songCategory: string;
   lyricsText: string | null;
+  duration: string | null;
+  trackNumber: number | null;
+  editionType: string | null;
+  releaseTitle: string;
+  releaseType: string;
+  releaseDate: string | null;
+  releaseYear: number | null;
   credits: Array<{
     role: "lyricist" | "composer" | "arranger";
     creatorId: number;
     creatorName: string;
     creatorRomaji: string | null;
+  }>;
+  formation: Array<{
+    memberName: string;
+    memberRomaji: string | null;
+    positionType: "center" | "fukujin" | "senbatsu" | "under";
+    rowNumber: number | null;
   }>;
 }
 
@@ -210,6 +338,7 @@ interface OutputCreator {
 
 function build(): void {
   console.log("Building static data from CSVs...\n");
+  const releaseMetaMap = loadReleaseMetaMap();
 
   const creatorMap = new Map<string, number>(); // name -> id
   let nextCreatorId = 1;
@@ -246,6 +375,15 @@ function build(): void {
       const songId = parseInt(csv.songId, 10);
       if (isNaN(songId)) continue;
 
+      const csvReleaseDate = toIsoDate(csv.releaseDate);
+      const csvReleaseYear = Number.parseInt(csv.releaseYear, 10);
+      const releaseMeta = releaseMetaMap.get(`${def.name}::${normalizeSongTitle(csv.title)}`);
+      const cacheReleaseDate = releaseDateFromSongCache(songId);
+      const releaseDate = csvReleaseDate ?? releaseMeta?.releaseDate ?? cacheReleaseDate ?? null;
+      const releaseYear = Number.isFinite(csvReleaseYear) ? csvReleaseYear : toYear(releaseDate);
+      const releaseTitle = csv.releaseTitle.trim() || releaseMeta?.releaseTitle || "";
+      const releaseType = csv.releaseType.trim() || releaseMeta?.releaseType || "other";
+
       const credits: OutputSong["credits"] = [];
 
       // Process each credit role
@@ -268,10 +406,19 @@ function build(): void {
       const song: OutputSong = {
         songId,
         songTitle: csv.title,
+        duration: null,
+        trackNumber: null,
+        editionType: null,
         groupId,
         groupName: def.name,
         groupCategory: def.category,
         songCategory: "other",
+        releaseId: null,
+        releaseTitle,
+        releaseType,
+        releaseNumber: null,
+        releaseDate,
+        releaseYear,
         credits,
       };
       allSongs.push(song);
@@ -283,7 +430,15 @@ function build(): void {
         groupId,
         songCategory: "other",
         lyricsText: csv.fullLyrics || null,
+        duration: null,
+        trackNumber: null,
+        editionType: null,
+        releaseTitle,
+        releaseType,
+        releaseDate,
+        releaseYear,
         credits: credits.map((c) => ({ ...c, creatorRomaji: null })),
+        formation: [],
       };
     }
   }
@@ -310,6 +465,15 @@ function build(): void {
   const songsList = allSongs.map((s) => ({
     songId: s.songId,
     songTitle: s.songTitle,
+    duration: s.duration,
+    trackNumber: s.trackNumber,
+    editionType: s.editionType,
+    releaseId: s.releaseId,
+    releaseTitle: s.releaseTitle,
+    releaseType: s.releaseType,
+    releaseNumber: s.releaseNumber,
+    releaseDate: s.releaseDate,
+    releaseYear: s.releaseYear,
     groupId: s.groupId,
     groupName: s.groupName,
     groupCategory: s.groupCategory,

@@ -29,6 +29,12 @@ export type SongListItem = {
   groupId: number;
   groupName: string;
   groupCategory: string;
+  credits?: Array<{
+    role: "lyricist" | "composer" | "arranger";
+    creatorId: number;
+    creatorName: string;
+    creatorRomaji?: string | null;
+  }>;
 };
 
 export type SongDetail = {

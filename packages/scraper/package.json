@@ -10,7 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts",
     "scrape": "tsx src/index.ts",
+    "scrape:all": "tsx src/index.ts --with-formation --limit=20",
     "export:csv": "tsx src/export-csv.ts",
+    "export:group-csv": "tsx src/export-csv.ts --group-csv-dir=../../sakamichi48_ver2/data",
+    "merge:lyrics": "tsx src/merge-lyrics.ts",
     "import:csv": "bash ./scripts/import-csv-to-db.sh"
   },
   "dependencies": {

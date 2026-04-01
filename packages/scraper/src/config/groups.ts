@@ -9,6 +9,13 @@ export const GROUPS: GroupSeed[] = [
     utaNetArtistId: 12550
   },
   {
+    key: "keyakizaka46",
+    name: "欅坂46",
+    nameRomaji: "Keyakizaka46",
+    category: "sakamichi",
+    utaNetArtistId: 19868
+  },
+  {
     key: "sakurazaka46",
     name: "櫻坂46",
     nameRomaji: "Sakurazaka46",
@@ -56,5 +63,12 @@ export const GROUPS: GroupSeed[] = [
     nameRomaji: "STU48",
     category: "48",
     utaNetArtistId: 23533
+  },
+  {
+    key: "ngt48",
+    name: "NGT48",
+    nameRomaji: "NGT48",
+    category: "48",
+    utaNetArtistId: 19680
   }
 ];

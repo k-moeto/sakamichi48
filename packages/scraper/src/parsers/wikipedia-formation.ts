@@ -30,12 +30,12 @@ function parseCenter(text: string): string[] {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       const raw = (match[1] ?? "")
-        .split(/(?:参加メンバー|選抜メンバー|メンバー|フォーメーション)\s*[：:]?/)[0]
+        .split(/(?:参加メンバー|選抜メンバー|歌唱メンバー|メンバー|フォーメーション)\s*[：:]?/)[0]
         ?.trim() ?? "";
       const names = raw
         .split(/[、,・]/)
         .map((n) => normalizeSpace(n))
-        .filter((n) => n.length > 0 && !/[：:]/.test(n));
+        .filter((n) => n.length > 0 && n.length < 20 && !/[：:]/.test(n));
       centers.push(...names);
     }
   }
@@ -58,7 +58,7 @@ function parseRowMembers(text: string): MemberPosition[] {
       .replace(/[（(][^）)]*[）)]/g, "")
       .split(/[、,]/)
       .map((n) => normalizeSpace(n))
-      .filter(Boolean);
+      .filter((n) => n.length > 0 && n.length < 20);
 
     for (const name of names) {
       members.push({
@@ -79,13 +79,20 @@ function parseFlatMemberList(text: string): MemberPosition[] {
   const cleaned = text
     .replace(/[（(]センター[：:][^）)]*[）)]/g, "")
     .replace(/センター\s*[：:]\s*[^、,\n]+/g, "")
-    .replace(/(?:参加|選抜)?メンバー\s*[：:]/g, "")
+    .replace(/(?:参加|選抜|歌唱)?メンバー\s*[：:]/g, "")
     .replace(/[（(][^）)]*[）)]/g, "");
 
   const names = cleaned
     .split(/[、,]/)
     .map((n) => normalizeSpace(n))
-    .filter((n) => n.length > 0 && n.length < 20 && !/列目|センター|ポジション/.test(n));
+    .filter((n) =>
+      n.length > 1 &&
+      n.length < 20 &&
+      !/列目|センター|ポジション|編集|脚注|出典|参考/.test(n) &&
+      !/^\d+$/.test(n)
+    );
+
+  if (names.length === 0) return [];
 
   return names.map((name) => ({
     name,
@@ -101,64 +108,7 @@ function detectFormationType(text: string): FormationType {
   return "unknown";
 }
 
-function detectUnitName(text: string): string | undefined {
-  const match = text.match(/[（(]([^）)]*ユニット[^）)]*)[）)]/);
-  if (match) return normalizeSpace(match[1] ?? "");
-
-  const unitMatch = text.match(/ユニット[：:]\s*([^\n、]+)/);
-  if (unitMatch) return normalizeSpace(unitMatch[1] ?? "");
-
-  return undefined;
-}
-
-function extractSongFormationBlocks($: CheerioAPI): Map<string, { text: string; heading: string }> {
-  const blocks = new Map<string, { text: string; heading: string }>();
-
-  const memberSections: string[] = [];
-  let inMemberSection = false;
-  let currentHeading = "";
-
-  const contentEl = $(".mw-parser-output").first();
-  if (!contentEl.length) return blocks;
-
-  contentEl.children().each((_, el) => {
-    const tagName = (el as any).tagName ?? "";
-    const $el = $(el);
-
-    if (/^h[2-4]$/.test(tagName)) {
-      const headingText = normalizeSpace($el.text());
-      if (/選抜メンバー|参加メンバー|フォーメーション|メンバー/.test(headingText)) {
-        inMemberSection = true;
-        currentHeading = headingText;
-      } else if (inMemberSection) {
-        inMemberSection = false;
-      }
-    }
-
-    if (inMemberSection && /^(?:p|ul|ol|dl|div)$/.test(tagName)) {
-      memberSections.push(normalizeSpace($el.text()));
-    }
-  });
-
-  const fullText = memberSections.join("\n");
-
-  const songBlocks = fullText.split(/(?=「[^」]+」)/);
-  for (const block of songBlocks) {
-    const titleMatch = block.match(/「([^」]+)」/);
-    if (titleMatch) {
-      const songTitle = normalizeTitle(titleMatch[1] ?? "");
-      blocks.set(songTitle, { text: block, heading: currentHeading });
-    }
-  }
-
-  if (blocks.size === 0 && fullText.length > 0) {
-    blocks.set("__title_track__", { text: fullText, heading: currentHeading });
-  }
-
-  return blocks;
-}
-
-function parseFormationFromText(text: string, heading: string): SongFormation {
+function parseFormationFromText(text: string): SongFormation {
   let members = parseRowMembers(text);
 
   if (members.length === 0) {
@@ -175,26 +125,95 @@ function parseFormationFromText(text: string, heading: string): SongFormation {
   }
 
   return {
-    formationType: detectFormationType(heading + " " + text),
-    unitName: detectUnitName(text),
+    formationType: detectFormationType(text),
     members,
     centerNames: centers.length > 0 ? centers : members.filter((m) => m.isCenter).map((m) => m.name)
   };
 }
 
+type SectionBlock = {
+  songTitle: string;
+  text: string;
+};
+
+function extractMemberSections($: CheerioAPI): SectionBlock[] {
+  const blocks: SectionBlock[] = [];
+
+  let inMemberSection = false;
+  let currentSongTitle = "";
+  let currentText = "";
+
+  const flushBlock = () => {
+    if (currentSongTitle && currentText.trim()) {
+      blocks.push({ songTitle: currentSongTitle, text: currentText });
+    }
+    currentText = "";
+  };
+
+  // Use find() to traverse all descendant elements, not just direct children
+  // Wikipedia wraps content in <section> tags, so direct children won't see headings
+  $("h2, h3, h4, p, ul, ol, dl").each((_, el) => {
+    const tagName = (el as any).tagName ?? "";
+    const $el = $(el);
+    const elText = normalizeSpace($el.text());
+
+    // h2 headings: detect member section start/end
+    if (tagName === "h2") {
+      if (/歌唱メンバー|選抜メンバー|参加メンバー|フォーメーション/.test(elText)) {
+        inMemberSection = true;
+        currentSongTitle = "";
+        currentText = "";
+      } else if (inMemberSection) {
+        flushBlock();
+        inMemberSection = false;
+      }
+      return;
+    }
+
+    if (!inMemberSection) return;
+
+    // h3/h4 headings: song titles within the member section
+    if (tagName === "h3" || tagName === "h4") {
+      flushBlock();
+      const headlineSpan = $el.find(".mw-headline").first();
+      const headingContent = normalizeSpace(headlineSpan.length ? headlineSpan.text() : elText);
+
+      const titleMatch = headingContent.match(/「([^」]+)」/);
+      currentSongTitle = titleMatch ? normalizeTitle(titleMatch[1] ?? "") : normalizeTitle(headingContent);
+      return;
+    }
+
+    // Content elements: accumulate text
+    if (currentSongTitle) {
+      currentText += " " + elText;
+    } else {
+      // Text before any song sub-heading (could be title track info)
+      currentText += " " + elText;
+    }
+  });
+
+  flushBlock();
+
+  if (blocks.length === 0 && currentText.trim()) {
+    blocks.push({ songTitle: "__title_track__", text: currentText });
+  }
+
+  return blocks;
+}
+
 export function parseFormationsFromReleasePage(html: string, titleTrackName?: string): Map<string, SongFormation> {
   const $ = load(html);
   const result = new Map<string, SongFormation>();
-  const blocks = extractSongFormationBlocks($);
+  const sections = extractMemberSections($);
 
-  for (const [songTitle, { text, heading }] of blocks) {
-    const formation = parseFormationFromText(text, heading);
+  for (const section of sections) {
+    const formation = parseFormationFromText(section.text);
     if (formation.members.length === 0) continue;
 
-    if (songTitle === "__title_track__" && titleTrackName) {
+    if (section.songTitle === "__title_track__" && titleTrackName) {
       result.set(normalizeTitle(titleTrackName), formation);
-    } else if (songTitle !== "__title_track__") {
-      result.set(songTitle, formation);
+    } else if (section.songTitle !== "__title_track__") {
+      result.set(section.songTitle, formation);
     }
   }
 
@@ -205,20 +224,17 @@ export function parseFormationsFromDiscographySection(html: string): Map<string,
   const $ = load(html);
   const result = new Map<string, SongFormation>();
 
-  const contentEl = $(".mw-parser-output").first();
-  if (!contentEl.length) return result;
-
   let currentSong = "";
   let currentText = "";
 
-  contentEl.find("h3, h4, p, ul, ol, dl, div").each((_, el) => {
+  $("h3, h4, p, ul, ol, dl").each((_, el) => {
     const tagName = (el as any).tagName ?? "";
     const $el = $(el);
     const text = normalizeSpace($el.text());
 
-    if (/^h[3-4]$/.test(tagName)) {
+    if (tagName === "h3" || tagName === "h4") {
       if (currentSong && currentText) {
-        const formation = parseFormationFromText(currentText, "");
+        const formation = parseFormationFromText(currentText);
         if (formation.members.length > 0) {
           result.set(normalizeTitle(currentSong), formation);
         }
@@ -228,6 +244,9 @@ export function parseFormationsFromDiscographySection(html: string): Map<string,
       if (titleMatch) {
         currentSong = titleMatch[1] ?? "";
         currentText = "";
+      } else {
+        currentSong = "";
+        currentText = "";
       }
     } else if (currentSong) {
       currentText += " " + text;
@@ -235,7 +254,7 @@ export function parseFormationsFromDiscographySection(html: string): Map<string,
   });
 
   if (currentSong && currentText) {
-    const formation = parseFormationFromText(currentText, "");
+    const formation = parseFormationFromText(currentText);
     if (formation.members.length > 0) {
       result.set(normalizeTitle(currentSong), formation);
     }

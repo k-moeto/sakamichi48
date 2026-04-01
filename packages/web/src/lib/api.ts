@@ -14,6 +14,11 @@ let songsWithCreditsCache: SongWithCredits[] | null = null;
 let creatorsCache: Creator[] | null = null;
 let songsDetailCache: Record<string, SongDetail> | null = null;
 
+type RawSongDetail = Omit<SongDetail, "credits" | "formation"> & {
+  credits?: SongDetail["credits"] | null;
+  formation?: SongDetail["formation"] | null;
+};
+
 async function loadJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`Failed to load ${path}: ${res.status}`);
@@ -73,7 +78,17 @@ export async function fetchSongs(query = "", groupId?: number, composerId?: numb
 
 export async function fetchSongDetail(songId: number): Promise<SongDetail> {
   if (!songsDetailCache) {
-    songsDetailCache = await loadJson<Record<string, SongDetail>>("/data/songs-detail.json");
+    const raw = await loadJson<Record<string, RawSongDetail>>("/data/songs-detail.json");
+    songsDetailCache = Object.fromEntries(
+      Object.entries(raw).map(([key, detail]) => [
+        key,
+        {
+          ...detail,
+          credits: Array.isArray(detail.credits) ? detail.credits : [],
+          formation: Array.isArray(detail.formation) ? detail.formation : []
+        } satisfies SongDetail
+      ])
+    );
   }
   const detail = songsDetailCache[String(songId)];
   if (!detail) throw new Error(`Song ${songId} not found`);

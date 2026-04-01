@@ -35,4 +35,5 @@ export const GROUPS: GroupConfig[] = [
   { id: "nmb48", name: "NMB48", nameJa: "NMB48", utanetArtistId: 10997 },
   { id: "hkt48", name: "HKT48", nameJa: "HKT48", utanetArtistId: 14548 },
   { id: "stu48", name: "STU48", nameJa: "STU48", utanetArtistId: 23533 },
+  { id: "ngt48", name: "NGT48", nameJa: "NGT48", utanetArtistId: 19680 },
 ];
