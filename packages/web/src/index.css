@@ -1,20 +1,144 @@
-@import url("https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: "M PLUS 1p", "Hiragino Kaku Gothic ProN", sans-serif;
-  color: #172236;
-  background: radial-gradient(circle at top left, #e7f0ff 0%, #f9fcff 45%, #f4f1ff 100%);
+  font-family: "Inter", "Hiragino Kaku Gothic ProN", sans-serif;
+  color: #111;
+  background: #fff;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  background: #fff;
 }
 
 #root {
   min-height: 100vh;
+}
+
+.simple-shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+  display: grid;
+  gap: 16px;
+}
+
+.simple-search {
+  width: 100%;
+  border: 1px solid #e4e4e7;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+}
+
+.simple-search:focus {
+  border-color: #111;
+}
+
+.tab-switch {
+  display: inline-flex;
+  border: 1px solid #e4e4e7;
+  border-radius: 999px;
+  padding: 2px;
+  width: fit-content;
+}
+
+.tab-switch button {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #71717a;
+  cursor: pointer;
+}
+
+.tab-switch button.is-active {
+  background: #111;
+  color: #fff;
+}
+
+.year-list {
+  display: grid;
+  gap: 4px;
+}
+
+.year-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+  padding: 8px 2px;
+  font-size: 28px;
+  line-height: 1;
+  color: #3f3f46;
+  cursor: pointer;
+}
+
+.year-item.is-active {
+  color: #111;
+  font-weight: 600;
+}
+
+.year-count {
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.composer-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.composer-list,
+.song-list {
+  border-top: 1px solid #f4f4f5;
+  display: grid;
+  gap: 2px;
+  padding-top: 10px;
+}
+
+.song-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  padding: 6px 0;
+  color: #18181b;
+  cursor: pointer;
+}
+
+.song-item.is-selected {
+  font-weight: 600;
+}
+
+.muted {
+  color: #a1a1aa;
+  font-size: 12px;
+}
+
+.song-detail {
+  border-top: 1px solid #f4f4f5;
+  padding-top: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 768px) {
+  .composer-layout {
+    grid-template-columns: 1fr;
+  }
 }
