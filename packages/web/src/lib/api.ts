@@ -98,10 +98,17 @@ export async function fetchSongDetail(songId: number): Promise<SongDetail> {
 export async function fetchComposerGraph(creatorId: number, excludeAkimoto = false): Promise<ComposerGraph> {
   const songs = await loadSongsWithCredits();
 
-  // Find all songs this creator is credited on
-  const creatorSongs = songs.filter((s) =>
-    s.credits.some((c) => c.creatorId === creatorId)
+  // Composer-focused graph:
+  // 1) Prefer songs where selected creator is credited as composer.
+  // 2) If none, fall back to all credited songs for that creator.
+  const composerSongs = songs.filter((song) =>
+    song.credits.some((credit) => credit.creatorId === creatorId && credit.role === "composer")
   );
+  const creatorSongs =
+    composerSongs.length > 0
+      ? composerSongs
+      : songs.filter((song) => song.credits.some((credit) => credit.creatorId === creatorId));
+  const composerFocused = composerSongs.length > 0;
 
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -120,7 +127,9 @@ export async function fetchComposerGraph(creatorId: number, excludeAkimoto = fal
       });
     }
 
-    for (const credit of song.credits) {
+    const relevantCredits = composerFocused ? song.credits.filter((credit) => credit.role === "composer") : song.credits;
+
+    for (const credit of relevantCredits) {
       if (excludeAkimoto && credit.creatorName === "秋元康") continue;
 
       const creatorNodeId = `creator-${credit.creatorId}`;

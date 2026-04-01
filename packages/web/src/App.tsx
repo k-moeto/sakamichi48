@@ -8,6 +8,7 @@ import type { ComposerGraph, Creator, Group, SongDetail, SongListItem } from "./
 const FILTER_AKIMOTO = "秋元康";
 type GraphMode = "composer" | "group";
 type SongSortOrder = "asc" | "desc";
+type CreatorFocusMode = "all" | "composer" | "crossGroupComposer";
 type WindowKey = "song" | "creator" | "graph";
 type WindowPlacement = { x: number; y: number; z: number };
 
@@ -194,6 +195,7 @@ export default function App(): JSX.Element {
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [songSearchText, setSongSearchText] = useState("");
   const [creatorSearchText, setCreatorSearchText] = useState("");
+  const [creatorFocusMode, setCreatorFocusMode] = useState<CreatorFocusMode>("crossGroupComposer");
   const [songSortOrder, setSongSortOrder] = useState<SongSortOrder>("asc");
   const [hideAkimoto, setHideAkimoto] = useState(true);
 
@@ -323,12 +325,6 @@ export default function App(): JSX.Element {
     return sortSongsByRelease(groupScoped, songSortOrder);
   }, [fuseSongs, songSearchText, songs, selectedGroupId, songSortOrder]);
 
-  const filteredCreators = useMemo(() => {
-    const base =
-      creatorSearchText.trim().length > 0 ? fuseCreators.search(creatorSearchText).map((x) => x.item) : creators;
-    return hideAkimoto ? base.filter((creator) => creator.name !== FILTER_AKIMOTO) : base;
-  }, [fuseCreators, creatorSearchText, creators, hideAkimoto]);
-
   const creatorRoleStats = useMemo(() => {
     const stats = new Map<number, { lyricist: number; composer: number; arranger: number; involvedSongs: number }>();
     const involvedSongSetByCreator = new Map<number, Set<number>>();
@@ -363,6 +359,98 @@ export default function App(): JSX.Element {
 
     return stats;
   }, [songs]);
+
+  const composerCrossStats = useMemo(() => {
+    const stats = new Map<number, { composedSongs: number; composedGroups: number; groupNames: string[] }>();
+    const songSetByCreator = new Map<number, Set<number>>();
+    const groupSetByCreator = new Map<number, Set<string>>();
+
+    for (const song of songs) {
+      for (const credit of song.credits ?? []) {
+        if (credit.role !== "composer") {
+          continue;
+        }
+        if (!songSetByCreator.has(credit.creatorId)) {
+          songSetByCreator.set(credit.creatorId, new Set<number>());
+        }
+        if (!groupSetByCreator.has(credit.creatorId)) {
+          groupSetByCreator.set(credit.creatorId, new Set<string>());
+        }
+
+        songSetByCreator.get(credit.creatorId)?.add(song.songId);
+        groupSetByCreator.get(credit.creatorId)?.add(song.groupName);
+      }
+    }
+
+    for (const [creatorId, songSet] of songSetByCreator) {
+      const groupsByCreator = [...(groupSetByCreator.get(creatorId) ?? new Set<string>())];
+      stats.set(creatorId, {
+        composedSongs: songSet.size,
+        composedGroups: groupsByCreator.length,
+        groupNames: groupsByCreator.sort((a, b) => a.localeCompare(b, "ja"))
+      });
+    }
+
+    return stats;
+  }, [songs]);
+
+  const filteredCreators = useMemo(() => {
+    const base =
+      creatorSearchText.trim().length > 0 ? fuseCreators.search(creatorSearchText).map((x) => x.item) : creators;
+    const withoutAkimoto = hideAkimoto ? base.filter((creator) => creator.name !== FILTER_AKIMOTO) : base;
+
+    if (creatorFocusMode === "all") {
+      return withoutAkimoto;
+    }
+
+    const filtered = withoutAkimoto.filter((creator) => {
+      const stat = composerCrossStats.get(creator.id);
+      if (!stat) {
+        return false;
+      }
+      if (creatorFocusMode === "composer") {
+        return stat.composedSongs > 0;
+      }
+      return stat.composedGroups >= 2;
+    });
+
+    return filtered.sort((a, b) => {
+      const statA = composerCrossStats.get(a.id);
+      const statB = composerCrossStats.get(b.id);
+      const groupDiff = (statB?.composedGroups ?? 0) - (statA?.composedGroups ?? 0);
+      if (groupDiff !== 0) {
+        return groupDiff;
+      }
+      const songDiff = (statB?.composedSongs ?? 0) - (statA?.composedSongs ?? 0);
+      if (songDiff !== 0) {
+        return songDiff;
+      }
+      return a.name.localeCompare(b.name, "ja");
+    });
+  }, [fuseCreators, creatorSearchText, creators, hideAkimoto, creatorFocusMode, composerCrossStats]);
+
+  const topCrossGroupComposers = useMemo(() => {
+    return creators
+      .filter((creator) => (hideAkimoto ? creator.name !== FILTER_AKIMOTO : true))
+      .map((creator) => ({ creator, stat: composerCrossStats.get(creator.id) }))
+      .filter((row): row is { creator: Creator; stat: { composedSongs: number; composedGroups: number; groupNames: string[] } } =>
+        Boolean(row.stat && row.stat.composedGroups >= 2)
+      )
+      .sort((a, b) => {
+        if (b.stat.composedGroups !== a.stat.composedGroups) {
+          return b.stat.composedGroups - a.stat.composedGroups;
+        }
+        if (b.stat.composedSongs !== a.stat.composedSongs) {
+          return b.stat.composedSongs - a.stat.composedSongs;
+        }
+        return a.creator.name.localeCompare(b.creator.name, "ja");
+      })
+      .slice(0, 12);
+  }, [creators, hideAkimoto, composerCrossStats]);
+
+  const selectedCreatorComposerStat = useMemo(() => {
+    return selectedCreator ? composerCrossStats.get(selectedCreator.id) ?? null : null;
+  }, [selectedCreator, composerCrossStats]);
 
   const creatorSongs = useMemo(() => {
     if (!selectedCreator) {
@@ -614,6 +702,61 @@ export default function App(): JSX.Element {
               >
                 ネットワークを開く
               </button>
+              <div className="ml-auto flex gap-2 text-[11px] text-zinc-500">
+                <button
+                  type="button"
+                  onClick={() => setCreatorFocusMode("crossGroupComposer")}
+                  className={`border-b px-0 py-1 transition ${
+                    creatorFocusMode === "crossGroupComposer"
+                      ? "border-zinc-900 text-zinc-900"
+                      : "border-zinc-300 hover:border-zinc-900 hover:text-zinc-900"
+                  }`}
+                >
+                  越境作曲家
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreatorFocusMode("composer")}
+                  className={`border-b px-0 py-1 transition ${
+                    creatorFocusMode === "composer"
+                      ? "border-zinc-900 text-zinc-900"
+                      : "border-zinc-300 hover:border-zinc-900 hover:text-zinc-900"
+                  }`}
+                >
+                  作曲あり
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreatorFocusMode("all")}
+                  className={`border-b px-0 py-1 transition ${
+                    creatorFocusMode === "all"
+                      ? "border-zinc-900 text-zinc-900"
+                      : "border-zinc-300 hover:border-zinc-900 hover:text-zinc-900"
+                  }`}
+                >
+                  全関係者
+                </button>
+              </div>
+            </div>
+
+            <div className="border-b border-zinc-200 pb-3">
+              <p className="mb-2 text-[11px] tracking-wide text-zinc-500">グループ横断ハイライト（作曲）</p>
+              <ul className="max-h-28 space-y-1 overflow-y-auto">
+                {topCrossGroupComposers.map(({ creator, stat }) => (
+                  <li key={`cross-${creator.id}`}>
+                    <button
+                      type="button"
+                      onClick={() => handleCreatorSelect(creator)}
+                      className="w-full text-left text-xs text-zinc-600 transition hover:text-zinc-900"
+                    >
+                      {creator.name}
+                      <span className="ml-2 text-zinc-500">
+                        {stat.composedGroups}グループ / 作曲{stat.composedSongs}曲
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <ul className="max-h-44 space-y-1 overflow-y-auto border-b border-zinc-200 pb-3">
@@ -637,6 +780,9 @@ export default function App(): JSX.Element {
                       <span>{creator.name}</span>
                       <span className="ml-2 text-xs text-zinc-500">
                         関与 {stat.involvedSongs} / 作詞 {stat.lyricist} / 作曲 {stat.composer} / 編曲 {stat.arranger}
+                        {composerCrossStats.get(creator.id)
+                          ? ` / 越境 ${composerCrossStats.get(creator.id)?.composedGroups ?? 0}`
+                          : ""}
                       </span>
                     </button>
                   </li>
@@ -650,6 +796,15 @@ export default function App(): JSX.Element {
                   楽曲 {creatorSongs.length}
                   {selectedGroupId ? "（選択グループ内）" : "（全グループ）"}
                 </p>
+                {selectedCreatorComposerStat ? (
+                  <p className="mb-2 text-xs text-zinc-500">
+                    作曲 {selectedCreatorComposerStat.composedSongs}曲 / {selectedCreatorComposerStat.composedGroups}グループ
+                    {" / "}
+                    {selectedCreatorComposerStat.groupNames.join("・")}
+                  </p>
+                ) : (
+                  <p className="mb-2 text-xs text-zinc-500">この人物の作曲クレジットは未確認</p>
+                )}
                 <ul className="max-h-52 space-y-1 overflow-y-auto">
                   {creatorSongs.map((song) => (
                     <li key={`creator-song-${song.songId}`}>
@@ -678,8 +833,18 @@ export default function App(): JSX.Element {
 
       {graphWindowOpen ? (
         <FloatingWindow
-          title={graphMode === "composer" ? "作曲家ネットワーク" : "グループネットワーク"}
-          subtitle={graphMode === "composer" ? selectedCreator?.name ?? "作曲家未選択" : "グループ全体"}
+          title={graphMode === "composer" ? "作曲相関ネットワーク" : "グループネットワーク"}
+          subtitle={
+            graphMode === "composer"
+              ? selectedCreator
+                ? `${selectedCreator.name}${
+                    selectedCreatorComposerStat
+                      ? ` / 作曲${selectedCreatorComposerStat.composedSongs}曲・${selectedCreatorComposerStat.composedGroups}グループ`
+                      : ""
+                  }`
+                : "作曲家未選択"
+              : "グループ全体"
+          }
           onClose={() => setGraphWindowOpen(false)}
           placement={windowPlacement.graph}
           onPlacementChange={(next) => moveWindow("graph", next)}

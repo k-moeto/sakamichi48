@@ -11,6 +11,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, "..", "data");
 const OUT_DIR = path.resolve(__dirname, "..", "packages", "web", "public", "data");
 const SONG_CACHE_DIR = path.resolve(__dirname, "..", "scraper", "cache");
+const CREATOR_ALIAS_PATH = path.resolve(
+  __dirname,
+  "..",
+  "packages",
+  "scraper",
+  "src",
+  "data",
+  "creator-aliases.json"
+);
+
+const CREATOR_ALIAS_MAP: Record<string, string> = fs.existsSync(CREATOR_ALIAS_PATH)
+  ? (JSON.parse(fs.readFileSync(CREATOR_ALIAS_PATH, "utf-8")) as Record<string, string>)
+  : {};
 
 interface CsvSong {
   songId: string;
@@ -174,11 +187,20 @@ function readCsvFile(filename: string): CsvSong[] {
 
 function splitCreators(field: string): string[] {
   if (!field.trim()) return [];
-  // Split on ・, ／, /, ・ but NOT on names within parentheses
-  return field
-    .split(/[・／\/]/)
-    .map((s) => s.trim())
+  const parts = field
+    .split(/[\/／,、・&＆;；]/)
+    .map((s) => normalizeCreatorName(s))
     .filter((s) => s.length > 0);
+  return [...new Set(parts)];
+}
+
+function normalizeCreatorName(input: string): string {
+  const normalized = input
+    .normalize("NFKC")
+    .replace(/[　]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return CREATOR_ALIAS_MAP[normalized] ?? normalized;
 }
 
 function toIsoDate(value: string): string | null {
@@ -344,7 +366,7 @@ function build(): void {
   let nextCreatorId = 1;
 
   function getOrCreateCreator(name: string): number {
-    const normalized = name.normalize("NFKC").trim();
+    const normalized = normalizeCreatorName(name);
     if (creatorMap.has(normalized)) {
       return creatorMap.get(normalized)!;
     }
@@ -355,7 +377,7 @@ function build(): void {
 
   const allSongs: OutputSong[] = [];
   const songDetails: Record<number, OutputSongDetail> = {};
-  const creatorSongCount = new Map<number, number>();
+  const creatorSongSet = new Map<number, Set<number>>();
   const groups: OutputGroup[] = [];
 
   for (let gi = 0; gi < GROUP_DEFS.length; gi++) {
@@ -385,6 +407,7 @@ function build(): void {
       const releaseType = csv.releaseType.trim() || releaseMeta?.releaseType || "other";
 
       const credits: OutputSong["credits"] = [];
+      const seenCreditKey = new Set<string>();
 
       // Process each credit role
       for (const [role, field] of [
@@ -395,11 +418,18 @@ function build(): void {
         const names = splitCreators(field);
         for (const name of names) {
           const creatorId = getOrCreateCreator(name);
-          credits.push({ role, creatorId, creatorName: name.normalize("NFKC").trim() });
+          const creatorName = normalizeCreatorName(name);
+          const creditKey = `${role}:${creatorId}`;
+          if (seenCreditKey.has(creditKey)) {
+            continue;
+          }
+          seenCreditKey.add(creditKey);
+          credits.push({ role, creatorId, creatorName });
 
-          // Count songs per creator (count each song once per creator)
-          const key = creatorId;
-          creatorSongCount.set(key, (creatorSongCount.get(key) ?? 0) + 1);
+          if (!creatorSongSet.has(creatorId)) {
+            creatorSongSet.set(creatorId, new Set<number>());
+          }
+          creatorSongSet.get(creatorId)?.add(songId);
         }
       }
 
@@ -450,10 +480,15 @@ function build(): void {
       id,
       name,
       nameRomaji: null,
-      songCount: creatorSongCount.get(id) ?? 0,
+      songCount: creatorSongSet.get(id)?.size ?? 0,
     });
   }
-  creatorsArr.sort((a, b) => b.songCount - a.songCount);
+  creatorsArr.sort((a, b) => {
+    if (b.songCount !== a.songCount) {
+      return b.songCount - a.songCount;
+    }
+    return a.name.localeCompare(b.name, "ja");
+  });
 
   // Write output
   fs.mkdirSync(OUT_DIR, { recursive: true });
