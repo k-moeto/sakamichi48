@@ -81,3 +81,12 @@ export type ComposerGraph = {
   nodes: GraphNode[];
   edges: GraphEdge[];
 };
+
+export type RelativeTimelineRow = {
+  elapsedMonths: number;
+  elapsedLabel: string;
+  akb48: string | null;
+  nogizaka46: string | null;
+  sakurazakaKeyaki46: string | null;
+  hinatazaka46: string | null;
+};

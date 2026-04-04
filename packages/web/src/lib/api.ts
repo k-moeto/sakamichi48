@@ -1,4 +1,13 @@
-import type { ComposerGraph, Creator, GraphEdge, GraphNode, Group, SongDetail, SongListItem } from "../types/api";
+import type {
+  ComposerGraph,
+  Creator,
+  GraphEdge,
+  GraphNode,
+  Group,
+  RelativeTimelineRow,
+  SongDetail,
+  SongListItem
+} from "../types/api";
 
 type SongWithCredits = SongListItem & {
   credits: Array<{
@@ -13,6 +22,7 @@ let groupsCache: Group[] | null = null;
 let songsWithCreditsCache: SongWithCredits[] | null = null;
 let creatorsCache: Creator[] | null = null;
 let songsDetailCache: Record<string, SongDetail> | null = null;
+let relativeTimelineCache: RelativeTimelineRow[] | null = null;
 
 type RawSongDetail = Omit<SongDetail, "credits" | "formation"> & {
   credits?: SongDetail["credits"] | null;
@@ -23,6 +33,12 @@ async function loadJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`Failed to load ${path}: ${res.status}`);
   return res.json() as Promise<T>;
+}
+
+async function loadText(path: string): Promise<string> {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`Failed to load ${path}: ${res.status}`);
+  return res.text();
 }
 
 async function loadSongsWithCredits(): Promise<SongWithCredits[]> {
@@ -93,6 +109,55 @@ export async function fetchSongDetail(songId: number): Promise<SongDetail> {
   const detail = songsDetailCache[String(songId)];
   if (!detail) throw new Error(`Song ${songId} not found`);
   return detail;
+}
+
+function parseRelativeTimelineMarkdown(markdown: string): RelativeTimelineRow[] {
+  const rows: RelativeTimelineRow[] = [];
+
+  const lines = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|"));
+
+  for (const line of lines) {
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+
+    if (cells.length < 6) {
+      continue;
+    }
+
+    const monthCell = cells[0] ?? "";
+    if (monthCell.includes("経過月") || monthCell.startsWith("--")) {
+      continue;
+    }
+
+    const elapsedMonths = Number.parseInt(monthCell, 10);
+    if (!Number.isFinite(elapsedMonths)) {
+      continue;
+    }
+
+    rows.push({
+      elapsedMonths,
+      elapsedLabel: cells[1] || "",
+      akb48: cells[2] || null,
+      nogizaka46: cells[3] || null,
+      sakurazakaKeyaki46: cells[4] || null,
+      hinatazaka46: cells[5] || null
+    });
+  }
+
+  return rows.sort((a, b) => a.elapsedMonths - b.elapsedMonths);
+}
+
+export async function fetchRelativeTimeline(): Promise<RelativeTimelineRow[]> {
+  if (!relativeTimelineCache) {
+    const markdown = await loadText("/data/group-single-relative-months.md");
+    relativeTimelineCache = parseRelativeTimelineMarkdown(markdown);
+  }
+  return relativeTimelineCache;
 }
 
 export async function fetchComposerGraph(creatorId: number, excludeAkimoto = false): Promise<ComposerGraph> {

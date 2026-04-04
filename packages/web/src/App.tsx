@@ -2,14 +2,22 @@ import Fuse from "fuse.js";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { GraphView } from "./components/GraphView";
-import { fetchComposerGraph, fetchCreators, fetchGroupGraph, fetchGroups, fetchSongDetail, fetchSongs } from "./lib/api";
-import type { ComposerGraph, Creator, Group, SongDetail, SongListItem } from "./types/api";
+import {
+  fetchComposerGraph,
+  fetchCreators,
+  fetchGroupGraph,
+  fetchGroups,
+  fetchRelativeTimeline,
+  fetchSongDetail,
+  fetchSongs
+} from "./lib/api";
+import type { ComposerGraph, Creator, Group, RelativeTimelineRow, SongDetail, SongListItem } from "./types/api";
 
 const FILTER_AKIMOTO = "秋元康";
 type GraphMode = "composer" | "group";
 type SongSortOrder = "asc" | "desc";
 type CreatorFocusMode = "all" | "composer" | "crossGroupComposer";
-type WindowKey = "song" | "creator" | "graph";
+type WindowKey = "song" | "creator" | "graph" | "timeline";
 type WindowPlacement = { x: number; y: number; z: number };
 
 const CREDIT_ROLE_LABEL: Record<SongDetail["credits"][number]["role"], string> = {
@@ -179,15 +187,18 @@ export default function App(): JSX.Element {
 
   const [selectedSong, setSelectedSong] = useState<SongDetail | null>(null);
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
+  const [timelineRows, setTimelineRows] = useState<RelativeTimelineRow[]>([]);
 
   const [creatorWindowOpen, setCreatorWindowOpen] = useState(false);
   const [graphWindowOpen, setGraphWindowOpen] = useState(false);
+  const [timelineWindowOpen, setTimelineWindowOpen] = useState(false);
   const [windowPlacement, setWindowPlacement] = useState<Record<WindowKey, WindowPlacement>>(() => {
     const viewportWidth = typeof window === "undefined" ? 1440 : window.innerWidth;
     return {
       song: { x: Math.max(16, viewportWidth - 640), y: 64, z: 40 },
       creator: { x: Math.max(32, viewportWidth - 700), y: 112, z: 30 },
-      graph: { x: 48, y: 84, z: 20 }
+      graph: { x: 48, y: 84, z: 20 },
+      timeline: { x: 72, y: 36, z: 10 }
     };
   });
   const zCounterRef = useRef(60);
@@ -204,6 +215,7 @@ export default function App(): JSX.Element {
 
   const [loading, setLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [bootstrapped, setBootstrapped] = useState(false);
 
   useEffect(() => {
@@ -298,6 +310,24 @@ export default function App(): JSX.Element {
 
     loadGraph().catch(console.error);
   }, [bootstrapped, graphWindowOpen, graphMode, selectedCreator, selectedGroupId, hideAkimoto, groups]);
+
+  useEffect(() => {
+    if (!timelineWindowOpen || timelineRows.length > 0) {
+      return;
+    }
+
+    setTimelineLoading(true);
+    fetchRelativeTimeline()
+      .then((rows) => {
+        setTimelineRows(rows);
+      })
+      .catch((error) => {
+        console.error(error);
+      })
+      .finally(() => {
+        setTimelineLoading(false);
+      });
+  }, [timelineWindowOpen, timelineRows.length]);
 
   const fuseSongs = useMemo(
     () =>
@@ -480,6 +510,11 @@ export default function App(): JSX.Element {
     bringWindowToFront("creator");
   }
 
+  function ensureTimelineWindow(): void {
+    setTimelineWindowOpen(true);
+    bringWindowToFront("timeline");
+  }
+
   function handleCreatorSelect(creator: Creator): void {
     setSelectedCreator(creator);
     setCreatorWindowOpen(true);
@@ -584,6 +619,14 @@ export default function App(): JSX.Element {
           >
             作曲家ウィンドウ
           </button>
+
+          <button
+            type="button"
+            onClick={ensureTimelineWindow}
+            className="border-b border-zinc-300 px-0 py-1.5 text-sm text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-900"
+          >
+            相対年表
+          </button>
         </div>
 
         <div className="mt-5">
@@ -667,6 +710,51 @@ export default function App(): JSX.Element {
               )}
             </div>
           </div>
+        </FloatingWindow>
+      ) : null}
+
+      {timelineWindowOpen ? (
+        <FloatingWindow
+          title="相対年表（1st=Month 0）"
+          subtitle="経過月数 = 満了した月数"
+          onClose={() => setTimelineWindowOpen(false)}
+          placement={windowPlacement.timeline}
+          onPlacementChange={(next) => moveWindow("timeline", next)}
+          onRequestFront={() => bringWindowToFront("timeline")}
+          className="w-[min(72rem,calc(100vw-1.5rem))]"
+        >
+          {timelineLoading ? <p className="text-xs text-zinc-500">年表を読み込み中...</p> : null}
+          {!timelineLoading && timelineRows.length === 0 ? (
+            <p className="text-xs text-zinc-500">年表データがありません。</p>
+          ) : null}
+          {timelineRows.length > 0 ? (
+            <div className="max-h-[70vh] overflow-auto">
+              <table className="min-w-[980px] border-collapse text-xs text-zinc-700">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b border-zinc-200 text-zinc-500">
+                    <th className="px-2 py-2 text-right font-normal">経過月</th>
+                    <th className="px-2 py-2 text-right font-normal">年+月</th>
+                    <th className="px-2 py-2 text-left font-normal">AKB48</th>
+                    <th className="px-2 py-2 text-left font-normal">乃木坂46</th>
+                    <th className="px-2 py-2 text-left font-normal">櫻坂/欅坂46</th>
+                    <th className="px-2 py-2 text-left font-normal">日向坂46</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timelineRows.map((row, index) => (
+                    <tr key={`timeline-${row.elapsedMonths}-${index}`} className="border-b border-zinc-100 align-top">
+                      <td className="px-2 py-2 text-right text-zinc-500">{row.elapsedMonths}</td>
+                      <td className="px-2 py-2 text-right text-zinc-500">{row.elapsedLabel}</td>
+                      <td className="px-2 py-2">{row.akb48 ?? ""}</td>
+                      <td className="px-2 py-2">{row.nogizaka46 ?? ""}</td>
+                      <td className="px-2 py-2">{row.sakurazakaKeyaki46 ?? ""}</td>
+                      <td className="px-2 py-2">{row.hinatazaka46 ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </FloatingWindow>
       ) : null}
 
