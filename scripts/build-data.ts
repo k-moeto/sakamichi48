@@ -35,6 +35,9 @@ interface CsvSong {
   releaseYear: string;
   releaseTitle: string;
   releaseType: string;
+  members: string;
+  center: string;
+  formationRows: string;
   fullLyrics: string;
   songUrl: string;
 }
@@ -58,6 +61,12 @@ const COLUMN_ALIASES: Record<string, keyof CsvSong> = {
   リリース名: "releaseTitle",
   release_type: "releaseType",
   リリース種別: "releaseType",
+  members: "members",
+  メンバー: "members",
+  center: "center",
+  センター: "center",
+  formation_rows: "formationRows",
+  フォーメーション: "formationRows",
   full_lyrics: "fullLyrics",
   歌詞: "fullLyrics",
   song_url: "songUrl",
@@ -178,6 +187,9 @@ function readCsvFile(filename: string): CsvSong[] {
     releaseYear: get(cols, "releaseYear"),
     releaseTitle: get(cols, "releaseTitle"),
     releaseType: get(cols, "releaseType"),
+    members: get(cols, "members"),
+    center: get(cols, "center"),
+    formationRows: get(cols, "formationRows"),
     fullLyrics: get(cols, "fullLyrics"),
     songUrl: get(cols, "songUrl"),
   }));
@@ -201,6 +213,25 @@ function normalizeCreatorName(input: string): string {
     .replace(/\s+/g, " ")
     .trim();
   return CREATOR_ALIAS_MAP[normalized] ?? normalized;
+}
+
+function normalizeMemberName(input: string): string {
+  return input
+    .normalize("NFKC")
+    .replace(/[　]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[,、;；\s]+/, "")
+    .replace(/[,、;；\s]+$/, "")
+    .trim();
+}
+
+function splitMemberNames(input: string, separator: RegExp): string[] {
+  if (!input.trim()) return [];
+  const names = input
+    .split(separator)
+    .map((part) => normalizeMemberName(part))
+    .filter((part) => part.length > 0);
+  return [...new Set(names)];
 }
 
 function toIsoDate(value: string): string | null {
@@ -358,6 +389,66 @@ interface OutputCreator {
   songCount: number;
 }
 
+function buildFormationFromCsv(csv: CsvSong): OutputSongDetail["formation"] {
+  const result: OutputSongDetail["formation"] = [];
+  const seen = new Set<string>();
+  const centerNames = new Set(splitMemberNames(csv.center, /[;；,，]/));
+
+  const pushMember = (
+    memberName: string,
+    positionType: OutputSongDetail["formation"][number]["positionType"],
+    rowNumber: number | null
+  ): void => {
+    if (!memberName || seen.has(memberName)) return;
+    seen.add(memberName);
+    result.push({
+      memberName,
+      memberRomaji: null,
+      positionType,
+      rowNumber
+    });
+  };
+
+  const rawFormation = csv.formationRows.trim();
+  const canUseRows = rawFormation.includes("|");
+
+  if (canUseRows) {
+    const rows = rawFormation.split("|").map((row) => row.trim()).filter((row) => row.length > 0);
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex] ?? "";
+      const members = splitMemberNames(row, /[,，;；]/);
+      for (const name of members) {
+        const isCenter = centerNames.has(name);
+        const positionType: OutputSongDetail["formation"][number]["positionType"] = isCenter
+          ? "center"
+          : rowIndex === 0
+            ? "fukujin"
+            : "senbatsu";
+        pushMember(name, positionType, rowIndex + 1);
+      }
+    }
+
+    // If members column exists, treat names missing from rows as under members.
+    const listedMembers = splitMemberNames(csv.members, /[;；]/);
+    for (const memberName of listedMembers) {
+      if (seen.has(memberName)) {
+        continue;
+      }
+      const positionType: OutputSongDetail["formation"][number]["positionType"] = centerNames.has(memberName)
+        ? "center"
+        : "under";
+      pushMember(memberName, positionType, null);
+    }
+  } else {
+    // Rows are often noisy without row separators; keep only explicit center info in that case.
+    for (const centerName of centerNames) {
+      pushMember(centerName, "center", null);
+    }
+  }
+
+  return result;
+}
+
 function build(): void {
   console.log("Building static data from CSVs...\n");
   const releaseMetaMap = loadReleaseMetaMap();
@@ -379,6 +470,8 @@ function build(): void {
   const songDetails: Record<number, OutputSongDetail> = {};
   const creatorSongSet = new Map<number, Set<number>>();
   const groups: OutputGroup[] = [];
+  const usedSongIds = new Set<number>();
+  let nextSyntheticSongId = 900000;
 
   for (let gi = 0; gi < GROUP_DEFS.length; gi++) {
     const def = GROUP_DEFS[gi];
@@ -394,13 +487,22 @@ function build(): void {
     console.log(`  ${def.name}: ${csvSongs.length} songs`);
 
     for (const csv of csvSongs) {
-      const songId = parseInt(csv.songId, 10);
-      if (isNaN(songId)) continue;
+      const rawSongId = parseInt(csv.songId, 10);
+      if (isNaN(rawSongId)) continue;
+      let songId = rawSongId;
+      if (usedSongIds.has(songId)) {
+        while (usedSongIds.has(nextSyntheticSongId)) {
+          nextSyntheticSongId += 1;
+        }
+        songId = nextSyntheticSongId;
+        nextSyntheticSongId += 1;
+      }
+      usedSongIds.add(songId);
 
       const csvReleaseDate = toIsoDate(csv.releaseDate);
       const csvReleaseYear = Number.parseInt(csv.releaseYear, 10);
       const releaseMeta = releaseMetaMap.get(`${def.name}::${normalizeSongTitle(csv.title)}`);
-      const cacheReleaseDate = releaseDateFromSongCache(songId);
+      const cacheReleaseDate = releaseDateFromSongCache(rawSongId);
       const releaseDate = csvReleaseDate ?? releaseMeta?.releaseDate ?? cacheReleaseDate ?? null;
       const releaseYear = Number.isFinite(csvReleaseYear) ? csvReleaseYear : toYear(releaseDate);
       const releaseTitle = csv.releaseTitle.trim() || releaseMeta?.releaseTitle || "";
@@ -453,6 +555,8 @@ function build(): void {
       };
       allSongs.push(song);
 
+      const formation = buildFormationFromCsv(csv);
+
       songDetails[songId] = {
         songId,
         title: csv.title,
@@ -468,7 +572,7 @@ function build(): void {
         releaseDate,
         releaseYear,
         credits: credits.map((c) => ({ ...c, creatorRomaji: null })),
-        formation: [],
+        formation,
       };
     }
   }
