@@ -1,5 +1,5 @@
 import Fuse from "fuse.js";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { GraphView } from "./components/GraphView";
 import {
@@ -14,11 +14,11 @@ import {
 import type { ComposerGraph, Creator, Group, RelativeTimelineRow, SongDetail, SongListItem } from "./types/api";
 
 const FILTER_AKIMOTO = "秋元康";
+
 type GraphMode = "composer" | "group";
 type SongSortOrder = "asc" | "desc";
+type CenterTab = "songs" | "timeline";
 type CreatorFocusMode = "all" | "composer" | "crossGroupComposer";
-type WindowKey = "song" | "creator" | "graph" | "timeline";
-type WindowPlacement = { x: number; y: number; z: number };
 
 const CREDIT_ROLE_LABEL: Record<SongDetail["credits"][number]["role"], string> = {
   lyricist: "作詞",
@@ -34,9 +34,7 @@ const POSITION_LABEL: Record<SongDetail["formation"][number]["positionType"], st
 };
 
 function isUnknownReleaseTitle(title: string | null | undefined): boolean {
-  if (!title) {
-    return true;
-  }
+  if (!title) return true;
   return title.includes("Uta-Net Other Songs");
 }
 
@@ -56,24 +54,16 @@ function sortSongsByRelease(rows: SongListItem[], order: SongSortOrder): SongLis
     const yearA = a.releaseYear;
     const yearB = b.releaseYear;
 
-    if (yearA === null && yearB !== null) {
-      return 1;
-    }
-    if (yearA !== null && yearB === null) {
-      return -1;
-    }
+    if (yearA === null && yearB !== null) return 1;
+    if (yearA !== null && yearB === null) return -1;
     if (yearA !== yearB) {
       return order === "asc" ? (yearA ?? 0) - (yearB ?? 0) : (yearB ?? 0) - (yearA ?? 0);
     }
 
     const dateA = a.releaseDate;
     const dateB = b.releaseDate;
-    if (!dateA && dateB) {
-      return 1;
-    }
-    if (dateA && !dateB) {
-      return -1;
-    }
+    if (!dateA && dateB) return 1;
+    if (dateA && !dateB) return -1;
     if (dateA && dateB && dateA !== dateB) {
       return order === "asc" ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
     }
@@ -82,101 +72,26 @@ function sortSongsByRelease(rows: SongListItem[], order: SongSortOrder): SongLis
   });
 }
 
-type WindowProps = {
+type CardProps = {
   title: string;
   subtitle?: string;
-  onClose: () => void;
-  placement: WindowPlacement;
-  onPlacementChange: (next: { x: number; y: number }) => void;
-  onRequestFront: () => void;
-  className?: string;
+  action?: ReactNode;
   children: ReactNode;
+  className?: string;
 };
 
-const WINDOW_MARGIN = 8;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function FloatingWindow({
-  title,
-  subtitle,
-  onClose,
-  placement,
-  onPlacementChange,
-  onRequestFront,
-  className = "",
-  children
-}: WindowProps): JSX.Element {
-  const articleRef = useRef<HTMLElement | null>(null);
-
-  function clampPosition(nextX: number, nextY: number): { x: number; y: number } {
-    const rect = articleRef.current?.getBoundingClientRect();
-    const width = rect?.width ?? 560;
-    const height = rect?.height ?? 420;
-    const maxX = Math.max(WINDOW_MARGIN, window.innerWidth - width - WINDOW_MARGIN);
-    const maxY = Math.max(WINDOW_MARGIN, window.innerHeight - height - WINDOW_MARGIN);
-    return {
-      x: clamp(nextX, WINDOW_MARGIN, maxX),
-      y: clamp(nextY, WINDOW_MARGIN, maxY)
-    };
-  }
-
-  function startDrag(event: React.MouseEvent<HTMLDivElement>): void {
-    if (event.button !== 0) {
-      return;
-    }
-
-    onRequestFront();
-    event.preventDefault();
-
-    const rect = articleRef.current?.getBoundingClientRect();
-    const originX = rect?.left ?? placement.x;
-    const originY = rect?.top ?? placement.y;
-    const offsetX = event.clientX - originX;
-    const offsetY = event.clientY - originY;
-
-    const onMouseMove = (moveEvent: MouseEvent): void => {
-      const next = clampPosition(moveEvent.clientX - offsetX, moveEvent.clientY - offsetY);
-      onPlacementChange(next);
-    };
-
-    const onMouseUp = (): void => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  }
-
+function Card({ title, subtitle, action, children, className = "" }: CardProps): JSX.Element {
   return (
-    <article
-      ref={articleRef}
-      style={{ left: placement.x, top: placement.y, zIndex: placement.z }}
-      onMouseDown={() => onRequestFront()}
-      className={`pointer-events-auto fixed max-h-[calc(100vh-2rem)] overflow-y-auto bg-white/98 p-5 shadow-[0_24px_64px_rgba(0,0,0,0.11)] backdrop-blur ${className}`}
-    >
-      <div
-        onMouseDown={startDrag}
-        className="mb-4 flex cursor-move select-none items-start justify-between gap-3 border-b border-zinc-200 pb-3"
-      >
+    <section className={`rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_12px_30px_rgba(0,0,0,0.04)] ${className}`}>
+      <div className="mb-3 flex items-start justify-between gap-3 border-b border-zinc-100 pb-3">
         <div>
-          <h2 className="text-lg font-medium tracking-wide text-zinc-900">{title}</h2>
+          <h2 className="text-sm font-semibold tracking-wide text-zinc-900">{title}</h2>
           {subtitle ? <p className="mt-1 text-xs text-zinc-500">{subtitle}</p> : null}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          onMouseDown={(event) => event.stopPropagation()}
-          className="text-xs tracking-wide text-zinc-500 transition hover:text-zinc-900"
-        >
-          CLOSE
-        </button>
+        {action}
       </div>
       {children}
-    </article>
+    </section>
   );
 }
 
@@ -184,30 +99,17 @@ export default function App(): JSX.Element {
   const [groups, setGroups] = useState<Group[]>([]);
   const [songs, setSongs] = useState<SongListItem[]>([]);
   const [creators, setCreators] = useState<Creator[]>([]);
+  const [timelineRows, setTimelineRows] = useState<RelativeTimelineRow[]>([]);
 
   const [selectedSong, setSelectedSong] = useState<SongDetail | null>(null);
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
-  const [timelineRows, setTimelineRows] = useState<RelativeTimelineRow[]>([]);
-
-  const [creatorWindowOpen, setCreatorWindowOpen] = useState(false);
-  const [graphWindowOpen, setGraphWindowOpen] = useState(false);
-  const [timelineWindowOpen, setTimelineWindowOpen] = useState(false);
-  const [windowPlacement, setWindowPlacement] = useState<Record<WindowKey, WindowPlacement>>(() => {
-    const viewportWidth = typeof window === "undefined" ? 1440 : window.innerWidth;
-    return {
-      song: { x: Math.max(16, viewportWidth - 640), y: 64, z: 40 },
-      creator: { x: Math.max(32, viewportWidth - 700), y: 112, z: 30 },
-      graph: { x: 48, y: 84, z: 20 },
-      timeline: { x: 72, y: 36, z: 10 }
-    };
-  });
-  const zCounterRef = useRef(60);
 
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
   const [songSearchText, setSongSearchText] = useState("");
   const [creatorSearchText, setCreatorSearchText] = useState("");
-  const [creatorFocusMode, setCreatorFocusMode] = useState<CreatorFocusMode>("crossGroupComposer");
   const [songSortOrder, setSongSortOrder] = useState<SongSortOrder>("asc");
+  const [creatorFocusMode, setCreatorFocusMode] = useState<CreatorFocusMode>("crossGroupComposer");
+  const [centerTab, setCenterTab] = useState<CenterTab>("songs");
   const [hideAkimoto, setHideAkimoto] = useState(true);
 
   const [graphMode, setGraphMode] = useState<GraphMode>("composer");
@@ -215,18 +117,17 @@ export default function App(): JSX.Element {
 
   const [loading, setLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
-  const [timelineLoading, setTimelineLoading] = useState(false);
-  const [bootstrapped, setBootstrapped] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     async function bootstrap(): Promise<void> {
       setLoading(true);
-      const [groupRows, creatorRows, songRows] = await Promise.all([
+      const [groupRows, creatorRows, songRows, timeline] = await Promise.all([
         fetchGroups(),
-        fetchCreators("", hideAkimoto),
-        fetchSongs()
+        fetchCreators(),
+        fetchSongs(),
+        fetchRelativeTimeline()
       ]);
 
       if (!mounted) {
@@ -236,7 +137,7 @@ export default function App(): JSX.Element {
       setGroups(groupRows);
       setCreators(creatorRows);
       setSongs(songRows);
-      setBootstrapped(true);
+      setTimelineRows(timeline);
       setLoading(false);
     }
 
@@ -253,42 +154,20 @@ export default function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    if (!bootstrapped) {
-      return;
-    }
-
-    fetchCreators("", hideAkimoto)
-      .then((result) => {
-        setCreators(result);
-      })
-      .catch((error) => {
-        console.error(error);
-      });
-  }, [bootstrapped, hideAkimoto]);
-
-  useEffect(() => {
-    if (hideAkimoto && selectedCreator?.name === FILTER_AKIMOTO) {
-      setSelectedCreator(null);
-    }
-  }, [hideAkimoto, selectedCreator]);
-
-  useEffect(() => {
-    if (!bootstrapped || !graphWindowOpen) {
-      return;
-    }
+    let cancelled = false;
 
     async function loadGraph(): Promise<void> {
       setGraphLoading(true);
-
       try {
         if (graphMode === "composer") {
           if (!selectedCreator) {
             setGraph(null);
             return;
           }
-
           const result = await fetchComposerGraph(selectedCreator.id, hideAkimoto);
-          setGraph(result);
+          if (!cancelled) {
+            setGraph(result);
+          }
           return;
         }
 
@@ -299,41 +178,33 @@ export default function App(): JSX.Element {
         }
 
         const result = await fetchGroupGraph(groupId, hideAkimoto, 120);
-        setGraph(result);
+        if (!cancelled) {
+          setGraph(result);
+        }
       } catch (error) {
         console.error(error);
-        setGraph(null);
+        if (!cancelled) {
+          setGraph(null);
+        }
       } finally {
-        setGraphLoading(false);
+        if (!cancelled) {
+          setGraphLoading(false);
+        }
       }
     }
 
     loadGraph().catch(console.error);
-  }, [bootstrapped, graphWindowOpen, graphMode, selectedCreator, selectedGroupId, hideAkimoto, groups]);
 
-  useEffect(() => {
-    if (!timelineWindowOpen || timelineRows.length > 0) {
-      return;
-    }
-
-    setTimelineLoading(true);
-    fetchRelativeTimeline()
-      .then((rows) => {
-        setTimelineRows(rows);
-      })
-      .catch((error) => {
-        console.error(error);
-      })
-      .finally(() => {
-        setTimelineLoading(false);
-      });
-  }, [timelineWindowOpen, timelineRows.length]);
+    return () => {
+      cancelled = true;
+    };
+  }, [graphMode, selectedCreator, selectedGroupId, hideAkimoto, groups]);
 
   const fuseSongs = useMemo(
     () =>
       new Fuse(songs, {
         keys: ["songTitle", "releaseTitle", "groupName"],
-        threshold: 0.34,
+        threshold: 0.33,
         ignoreLocation: true
       }),
     [songs]
@@ -343,7 +214,7 @@ export default function App(): JSX.Element {
     () =>
       new Fuse(creators, {
         keys: ["name", "nameRomaji"],
-        threshold: 0.34,
+        threshold: 0.32,
         ignoreLocation: true
       }),
     [creators]
@@ -353,7 +224,7 @@ export default function App(): JSX.Element {
     const searched = songSearchText.trim().length > 0 ? fuseSongs.search(songSearchText).map((x) => x.item) : songs;
     const groupScoped = selectedGroupId ? searched.filter((song) => song.groupId === selectedGroupId) : searched;
     return sortSongsByRelease(groupScoped, songSortOrder);
-  }, [fuseSongs, songSearchText, songs, selectedGroupId, songSortOrder]);
+  }, [songSearchText, songs, selectedGroupId, songSortOrder, fuseSongs]);
 
   const creatorRoleStats = useMemo(() => {
     const stats = new Map<number, { lyricist: number; composer: number; arranger: number; involvedSongs: number }>();
@@ -448,23 +319,22 @@ export default function App(): JSX.Element {
       const statA = composerCrossStats.get(a.id);
       const statB = composerCrossStats.get(b.id);
       const groupDiff = (statB?.composedGroups ?? 0) - (statA?.composedGroups ?? 0);
-      if (groupDiff !== 0) {
-        return groupDiff;
-      }
+      if (groupDiff !== 0) return groupDiff;
       const songDiff = (statB?.composedSongs ?? 0) - (statA?.composedSongs ?? 0);
-      if (songDiff !== 0) {
-        return songDiff;
-      }
+      if (songDiff !== 0) return songDiff;
       return a.name.localeCompare(b.name, "ja");
     });
-  }, [fuseCreators, creatorSearchText, creators, hideAkimoto, creatorFocusMode, composerCrossStats]);
+  }, [creatorSearchText, creators, hideAkimoto, creatorFocusMode, composerCrossStats, fuseCreators]);
 
   const topCrossGroupComposers = useMemo(() => {
     return creators
       .filter((creator) => (hideAkimoto ? creator.name !== FILTER_AKIMOTO : true))
       .map((creator) => ({ creator, stat: composerCrossStats.get(creator.id) }))
-      .filter((row): row is { creator: Creator; stat: { composedSongs: number; composedGroups: number; groupNames: string[] } } =>
-        Boolean(row.stat && row.stat.composedGroups >= 2)
+      .filter(
+        (
+          row
+        ): row is { creator: Creator; stat: { composedSongs: number; composedGroups: number; groupNames: string[] } } =>
+          Boolean(row.stat && row.stat.composedGroups >= 2)
       )
       .sort((a, b) => {
         if (b.stat.composedGroups !== a.stat.composedGroups) {
@@ -475,14 +345,10 @@ export default function App(): JSX.Element {
         }
         return a.creator.name.localeCompare(b.creator.name, "ja");
       })
-      .slice(0, 12);
+      .slice(0, 8);
   }, [creators, hideAkimoto, composerCrossStats]);
 
-  const selectedCreatorComposerStat = useMemo(() => {
-    return selectedCreator ? composerCrossStats.get(selectedCreator.id) ?? null : null;
-  }, [selectedCreator, composerCrossStats]);
-
-  const creatorSongs = useMemo(() => {
+  const selectedCreatorSongs = useMemo(() => {
     if (!selectedCreator) {
       return [];
     }
@@ -495,31 +361,13 @@ export default function App(): JSX.Element {
     return sortSongsByRelease(rows, songSortOrder);
   }, [songs, selectedCreator, selectedGroupId, songSortOrder]);
 
+  const selectedCreatorComposerStat = useMemo(() => {
+    return selectedCreator ? composerCrossStats.get(selectedCreator.id) ?? null : null;
+  }, [selectedCreator, composerCrossStats]);
+
   async function handleSongSelect(songId: number): Promise<void> {
     const detail = await fetchSongDetail(songId);
     setSelectedSong(detail);
-    bringWindowToFront("song");
-  }
-
-  function handleGraphNodeSongNavigate(songId: number): void {
-    handleSongSelect(songId).catch(console.error);
-  }
-
-  function ensureCreatorWindow(): void {
-    setCreatorWindowOpen(true);
-    bringWindowToFront("creator");
-  }
-
-  function ensureTimelineWindow(): void {
-    setTimelineWindowOpen(true);
-    bringWindowToFront("timeline");
-  }
-
-  function handleCreatorSelect(creator: Creator): void {
-    setSelectedCreator(creator);
-    setCreatorWindowOpen(true);
-    setGraphMode("composer");
-    bringWindowToFront("creator");
   }
 
   function openCreatorFromCredit(credit: SongDetail["credits"][number]): void {
@@ -530,452 +378,434 @@ export default function App(): JSX.Element {
       nameRomaji: credit.creatorRomaji ?? null,
       songCount: creatorRoleStats.get(credit.creatorId)?.involvedSongs ?? 0
     };
-    handleCreatorSelect(found ?? fallback);
+    setSelectedCreator(found ?? fallback);
+    setGraphMode("composer");
   }
 
-  function moveWindow(windowKey: WindowKey, next: { x: number; y: number }): void {
-    setWindowPlacement((prev) => ({
-      ...prev,
-      [windowKey]: {
-        ...prev[windowKey],
-        x: next.x,
-        y: next.y
-      }
-    }));
-  }
-
-  function bringWindowToFront(windowKey: WindowKey): void {
-    const nextZ = zCounterRef.current + 1;
-    zCounterRef.current = nextZ;
-    setWindowPlacement((prev) => ({
-      ...prev,
-      [windowKey]: {
-        ...prev[windowKey],
-        z: nextZ
-      }
-    }));
-  }
+  const dashboardStats = useMemo(() => {
+    const songCount = songs.length;
+    const creatorCount = creators.length;
+    const crossComposerCount = [...composerCrossStats.values()].filter((stat) => stat.composedGroups >= 2).length;
+    const withFormationCount = selectedSong?.formation.length ?? 0;
+    return { songCount, creatorCount, crossComposerCount, withFormationCount };
+  }, [songs, creators, composerCrossStats, selectedSong]);
 
   return (
-    <main className="min-h-screen bg-white px-5 pb-16 pt-10 text-zinc-900 sm:px-8">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-8">
-          <p className="display-serif text-xs uppercase tracking-[0.26em] text-zinc-500">Sakamichi48</p>
-          <h1 className="display-serif mt-3 text-4xl tracking-wide text-zinc-900">楽曲ネットワーク</h1>
-          <p className="mt-2 text-sm text-zinc-500">
-            まずは楽曲から。情報を辿ると、右側にウィンドウが重なって展開されます。
-          </p>
-        </header>
-
-        <div className="flex flex-wrap items-end gap-4 border-b border-zinc-200 pb-4">
-          <label className="min-w-56 flex-1">
-            <span className="block text-[11px] tracking-wide text-zinc-500">楽曲検索</span>
-            <input
-              value={songSearchText}
-              onChange={(event) => setSongSearchText(event.target.value)}
-              placeholder="曲名 / リリース / グループ"
-              className="mt-1 w-full border-0 border-b border-zinc-300 bg-transparent px-0 py-1.5 text-sm outline-none focus:border-zinc-900"
-            />
-          </label>
-
-          <label>
-            <span className="block text-[11px] tracking-wide text-zinc-500">グループ</span>
-            <select
-              className="mt-1 border-0 border-b border-zinc-300 bg-transparent px-0 py-1.5 text-sm outline-none focus:border-zinc-900"
-              value={selectedGroupId ?? ""}
-              onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : undefined)}
-            >
-              <option value="">全グループ</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="button"
-            onClick={() => setSongSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
-            className="border-b border-zinc-300 px-0 py-1.5 text-sm text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-900"
-          >
-            年順: {songSortOrder === "asc" ? "昇順" : "降順"}
-          </button>
-
-          <label className="flex items-center gap-2 border-b border-zinc-300 py-1.5 text-sm text-zinc-700">
-            <input
-              type="checkbox"
-              checked={hideAkimoto}
-              onChange={(event) => setHideAkimoto(event.target.checked)}
-              className="accent-zinc-800"
-            />
-            秋元康を除外
-          </label>
-
-          <button
-            type="button"
-            onClick={ensureCreatorWindow}
-            className="border-b border-zinc-300 px-0 py-1.5 text-sm text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-900"
-          >
-            作曲家ウィンドウ
-          </button>
-
-          <button
-            type="button"
-            onClick={ensureTimelineWindow}
-            className="border-b border-zinc-300 px-0 py-1.5 text-sm text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-900"
-          >
-            相対年表
-          </button>
-        </div>
-
-        <div className="mt-5">
-          <p className="mb-3 text-xs tracking-wide text-zinc-500">楽曲 {filteredSongs.length}</p>
-          <ul className="divide-y divide-zinc-100">
-            {filteredSongs.map((song) => (
-              <li key={song.songId}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSongSelect(song.songId).catch(console.error);
-                  }}
-                  className="w-full py-3 text-left transition hover:bg-zinc-50/70"
-                >
-                  <p className="text-sm text-zinc-900">{song.songTitle}</p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
-                    {formatSongMetaLine(song.groupName, song.releaseTitle, song.releaseYear)}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {loading ? <p className="mt-6 text-sm text-zinc-500">Loading...</p> : null}
-      </div>
-
-      {selectedSong ? (
-        <FloatingWindow
-          title={selectedSong.title}
-          subtitle={formatSongMetaLine(selectedSong.groupName, selectedSong.releaseTitle, selectedSong.releaseYear)}
-          onClose={() => setSelectedSong(null)}
-          placement={windowPlacement.song}
-          onPlacementChange={(next) => moveWindow("song", next)}
-          onRequestFront={() => bringWindowToFront("song")}
-          className="w-[min(38rem,calc(100vw-1.5rem))]"
-        >
-          <div className="space-y-5 text-sm text-zinc-700">
+    <main className="min-h-screen bg-zinc-50 px-4 py-6 text-zinc-900 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1560px] space-y-5">
+        <header className="rounded-2xl border border-zinc-200 bg-white px-5 py-4 shadow-[0_12px_30px_rgba(0,0,0,0.04)]">
+          <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs tracking-wide text-zinc-500">クレジット</p>
-              <ul className="mt-2 space-y-1.5">
-                {selectedSong.credits.map((credit) => (
-                  <li key={`${credit.role}-${credit.creatorId}`}>
-                    <button
-                      type="button"
-                      className="w-full text-left text-sm text-zinc-700 transition hover:text-zinc-950"
-                      onClick={() => openCreatorFromCredit(credit)}
-                    >
-                      <span className="mr-2 text-xs text-zinc-500">{CREDIT_ROLE_LABEL[credit.role]}</span>
-                      {credit.creatorName}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">Sakamichi48 Dashboard</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-wide text-zinc-900">楽曲ネットワーク検索</h1>
+              <p className="mt-1 text-xs text-zinc-500">グループ横断で作曲家・楽曲・フォーメーションを素早く追えます。</p>
             </div>
-
-            <div>
-              <p className="text-xs tracking-wide text-zinc-500">歌詞</p>
-              {selectedSong.lyricsText ? (
-                <pre className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-zinc-700">
-                  {selectedSong.lyricsText}
-                </pre>
-              ) : (
-                <p className="mt-2 text-xs text-zinc-500">歌詞データ未取得</p>
-              )}
-            </div>
-
-            <div>
-              <p className="text-xs tracking-wide text-zinc-500">フォーメーション</p>
-              {selectedSong.formation.length > 0 ? (
-                <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                  {selectedSong.formation.map((member, idx) => (
-                    <li key={`${member.memberName}-${idx}`} className="text-xs text-zinc-700">
-                      {member.memberName}（{POSITION_LABEL[member.positionType]}
-                      {member.rowNumber ? ` / ${member.rowNumber}列目` : ""}）
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-2 text-xs text-zinc-500">未取得</p>
-              )}
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <div className="rounded-lg bg-zinc-100 px-3 py-2 text-zinc-700">楽曲 {dashboardStats.songCount}</div>
+              <div className="rounded-lg bg-zinc-100 px-3 py-2 text-zinc-700">作家 {dashboardStats.creatorCount}</div>
+              <div className="rounded-lg bg-zinc-100 px-3 py-2 text-zinc-700">越境作曲家 {dashboardStats.crossComposerCount}</div>
+              <div className="rounded-lg bg-zinc-100 px-3 py-2 text-zinc-700">選択曲フォーメーション {dashboardStats.withFormationCount}</div>
             </div>
           </div>
-        </FloatingWindow>
-      ) : null}
+        </header>
 
-      {timelineWindowOpen ? (
-        <FloatingWindow
-          title="相対年表（1st=Month 0）"
-          subtitle="経過月数 = 満了した月数"
-          onClose={() => setTimelineWindowOpen(false)}
-          placement={windowPlacement.timeline}
-          onPlacementChange={(next) => moveWindow("timeline", next)}
-          onRequestFront={() => bringWindowToFront("timeline")}
-          className="w-[min(72rem,calc(100vw-1.5rem))]"
-        >
-          {timelineLoading ? <p className="text-xs text-zinc-500">年表を読み込み中...</p> : null}
-          {!timelineLoading && timelineRows.length === 0 ? (
-            <p className="text-xs text-zinc-500">年表データがありません。</p>
-          ) : null}
-          {timelineRows.length > 0 ? (
-            <div className="max-h-[70vh] overflow-auto">
-              <table className="min-w-[980px] border-collapse text-xs text-zinc-700">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="border-b border-zinc-200 text-zinc-500">
-                    <th className="px-2 py-2 text-right font-normal">経過月</th>
-                    <th className="px-2 py-2 text-right font-normal">年+月</th>
-                    <th className="px-2 py-2 text-left font-normal">AKB48</th>
-                    <th className="px-2 py-2 text-left font-normal">乃木坂46</th>
-                    <th className="px-2 py-2 text-left font-normal">櫻坂/欅坂46</th>
-                    <th className="px-2 py-2 text-left font-normal">日向坂46</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timelineRows.map((row, index) => (
-                    <tr key={`timeline-${row.elapsedMonths}-${index}`} className="border-b border-zinc-100 align-top">
-                      <td className="px-2 py-2 text-right text-zinc-500">{row.elapsedMonths}</td>
-                      <td className="px-2 py-2 text-right text-zinc-500">{row.elapsedLabel}</td>
-                      <td className="px-2 py-2">{row.akb48 ?? ""}</td>
-                      <td className="px-2 py-2">{row.nogizaka46 ?? ""}</td>
-                      <td className="px-2 py-2">{row.sakurazakaKeyaki46 ?? ""}</td>
-                      <td className="px-2 py-2">{row.hinatazaka46 ?? ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </FloatingWindow>
-      ) : null}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_420px]">
+          <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+            <Card title="検索と絞り込み" subtitle="楽曲を起点に探索">
+              <div className="space-y-3 text-sm">
+                <label className="block">
+                  <span className="text-[11px] tracking-wide text-zinc-500">楽曲検索</span>
+                  <input
+                    value={songSearchText}
+                    onChange={(event) => setSongSearchText(event.target.value)}
+                    placeholder="曲名 / リリース / グループ"
+                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-700"
+                  />
+                </label>
 
-      {creatorWindowOpen ? (
-        <FloatingWindow
-          title={selectedCreator?.name ?? "作曲家を選択"}
-          subtitle={selectedCreator ? "関わった楽曲を横断表示" : "楽曲詳細のクレジットから選択できます"}
-          onClose={() => setCreatorWindowOpen(false)}
-          placement={windowPlacement.creator}
-          onPlacementChange={(next) => moveWindow("creator", next)}
-          onRequestFront={() => bringWindowToFront("creator")}
-          className="w-[min(40rem,calc(100vw-1.5rem))]"
-        >
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-end gap-3 border-b border-zinc-200 pb-3">
-              <label className="min-w-48 flex-1">
-                <span className="block text-[11px] tracking-wide text-zinc-500">作曲家検索</span>
+                <label className="block">
+                  <span className="text-[11px] tracking-wide text-zinc-500">グループ</span>
+                  <select
+                    value={selectedGroupId ?? ""}
+                    onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : undefined)}
+                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-700"
+                  >
+                    <option value="">全グループ</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSongSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                    className="rounded-lg border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:border-zinc-700"
+                  >
+                    年順 {songSortOrder === "asc" ? "昇順" : "降順"}
+                  </button>
+                  <label className="flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2 text-xs text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={hideAkimoto}
+                      onChange={(event) => setHideAkimoto(event.target.checked)}
+                      className="accent-zinc-800"
+                    />
+                    秋元康除外
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCenterTab("songs")}
+                    className={`rounded-lg px-3 py-2 text-xs ${
+                      centerTab === "songs" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-700"
+                    }`}
+                  >
+                    楽曲一覧
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCenterTab("timeline")}
+                    className={`rounded-lg px-3 py-2 text-xs ${
+                      centerTab === "timeline" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-700"
+                    }`}
+                  >
+                    相対年表
+                  </button>
+                </div>
+              </div>
+            </Card>
+
+            <Card
+              title="作曲家ナビ"
+              subtitle="越境作曲家から探索"
+              action={
+                <div className="flex gap-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setCreatorFocusMode("crossGroupComposer")}
+                    className={`rounded px-2 py-1 ${
+                      creatorFocusMode === "crossGroupComposer" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-600"
+                    }`}
+                  >
+                    越境
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreatorFocusMode("composer")}
+                    className={`rounded px-2 py-1 ${
+                      creatorFocusMode === "composer" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-600"
+                    }`}
+                  >
+                    作曲
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreatorFocusMode("all")}
+                    className={`rounded px-2 py-1 ${
+                      creatorFocusMode === "all" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-600"
+                    }`}
+                  >
+                    全
+                  </button>
+                </div>
+              }
+            >
+              <div className="space-y-3">
                 <input
                   value={creatorSearchText}
                   onChange={(event) => setCreatorSearchText(event.target.value)}
-                  placeholder="作曲家名"
-                  className="mt-1 w-full border-0 border-b border-zinc-300 bg-transparent px-0 py-1 text-sm outline-none focus:border-zinc-900"
+                  placeholder="作曲家名で検索"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-700"
                 />
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setGraphMode("composer");
-                  setGraphWindowOpen(true);
-                  bringWindowToFront("graph");
-                }}
-                className="border-b border-zinc-300 px-0 py-1 text-xs text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-900"
-              >
-                ネットワークを開く
-              </button>
-              <div className="ml-auto flex gap-2 text-[11px] text-zinc-500">
-                <button
-                  type="button"
-                  onClick={() => setCreatorFocusMode("crossGroupComposer")}
-                  className={`border-b px-0 py-1 transition ${
-                    creatorFocusMode === "crossGroupComposer"
-                      ? "border-zinc-900 text-zinc-900"
-                      : "border-zinc-300 hover:border-zinc-900 hover:text-zinc-900"
-                  }`}
-                >
-                  越境作曲家
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCreatorFocusMode("composer")}
-                  className={`border-b px-0 py-1 transition ${
-                    creatorFocusMode === "composer"
-                      ? "border-zinc-900 text-zinc-900"
-                      : "border-zinc-300 hover:border-zinc-900 hover:text-zinc-900"
-                  }`}
-                >
-                  作曲あり
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCreatorFocusMode("all")}
-                  className={`border-b px-0 py-1 transition ${
-                    creatorFocusMode === "all"
-                      ? "border-zinc-900 text-zinc-900"
-                      : "border-zinc-300 hover:border-zinc-900 hover:text-zinc-900"
-                  }`}
-                >
-                  全関係者
-                </button>
+
+                <div className="rounded-lg bg-zinc-50 p-2">
+                  <p className="mb-1 text-[11px] text-zinc-500">越境ハイライト</p>
+                  <div className="flex flex-wrap gap-1">
+                    {topCrossGroupComposers.map(({ creator, stat }) => (
+                      <button
+                        key={`cross-${creator.id}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCreator(creator);
+                          setGraphMode("composer");
+                        }}
+                        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] text-zinc-700 hover:border-zinc-700"
+                        title={`${stat.composedGroups}グループ / 作曲${stat.composedSongs}曲`}
+                      >
+                        {creator.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <ul className="max-h-64 space-y-1 overflow-y-auto">
+                  {filteredCreators.map((creator) => {
+                    const roleStat = creatorRoleStats.get(creator.id) ?? {
+                      lyricist: 0,
+                      composer: 0,
+                      arranger: 0,
+                      involvedSongs: 0
+                    };
+                    const cross = composerCrossStats.get(creator.id);
+                    return (
+                      <li key={creator.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCreator(creator);
+                            setGraphMode("composer");
+                          }}
+                          className={`w-full rounded-lg border px-2 py-2 text-left text-xs transition ${
+                            selectedCreator?.id === creator.id
+                              ? "border-zinc-800 bg-zinc-100 text-zinc-900"
+                              : "border-zinc-200 text-zinc-700 hover:border-zinc-500"
+                          }`}
+                        >
+                          <p className="font-medium">{creator.name}</p>
+                          <p className="mt-1 text-[11px] text-zinc-500">
+                            関与{roleStat.involvedSongs} / 作曲{roleStat.composer}
+                            {cross ? ` / 越境${cross.composedGroups}` : ""}
+                          </p>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-            </div>
+            </Card>
+          </div>
 
-            <div className="border-b border-zinc-200 pb-3">
-              <p className="mb-2 text-[11px] tracking-wide text-zinc-500">グループ横断ハイライト（作曲）</p>
-              <ul className="max-h-28 space-y-1 overflow-y-auto">
-                {topCrossGroupComposers.map(({ creator, stat }) => (
-                  <li key={`cross-${creator.id}`}>
-                    <button
-                      type="button"
-                      onClick={() => handleCreatorSelect(creator)}
-                      className="w-full text-left text-xs text-zinc-600 transition hover:text-zinc-900"
-                    >
-                      {creator.name}
-                      <span className="ml-2 text-zinc-500">
-                        {stat.composedGroups}グループ / 作曲{stat.composedSongs}曲
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          <div className="space-y-4">
+            <Card
+              title={centerTab === "songs" ? "楽曲一覧" : "相対年表（1st=Month 0）"}
+              subtitle={centerTab === "songs" ? `検索結果 ${filteredSongs.length}曲` : "経過月数 = 満了した月数"}
+            >
+              {centerTab === "songs" ? (
+                <div className="max-h-[72vh] overflow-auto">
+                  <table className="min-w-[900px] border-collapse text-xs">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="border-b border-zinc-200 text-zinc-500">
+                        <th className="px-2 py-2 text-left font-normal">曲名</th>
+                        <th className="px-2 py-2 text-left font-normal">グループ</th>
+                        <th className="px-2 py-2 text-left font-normal">リリース</th>
+                        <th className="px-2 py-2 text-left font-normal">作曲</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSongs.map((song) => {
+                        const composerNames = (song.credits ?? [])
+                          .filter((credit) => credit.role === "composer")
+                          .filter((credit) => !(hideAkimoto && credit.creatorName === FILTER_AKIMOTO))
+                          .map((credit) => credit.creatorName);
 
-            <ul className="max-h-44 space-y-1 overflow-y-auto border-b border-zinc-200 pb-3">
-              {filteredCreators.map((creator) => {
-                const stat = creatorRoleStats.get(creator.id) ?? {
-                  lyricist: 0,
-                  composer: 0,
-                  arranger: 0,
-                  involvedSongs: 0
-                };
+                        return (
+                          <tr key={song.songId} className="border-b border-zinc-100 align-top">
+                            <td className="px-2 py-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleSongSelect(song.songId).catch(console.error);
+                                }}
+                                className="text-left text-zinc-900 hover:text-zinc-600"
+                              >
+                                {song.songTitle}
+                              </button>
+                            </td>
+                            <td className="px-2 py-2 text-zinc-600">{song.groupName}</td>
+                            <td className="px-2 py-2 text-zinc-500">{formatSongMetaLine(song.groupName, song.releaseTitle, song.releaseYear)}</td>
+                            <td className="px-2 py-2 text-zinc-600">{composerNames.join(" / ") || "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="max-h-[72vh] overflow-auto">
+                  <table className="min-w-[980px] border-collapse text-xs text-zinc-700">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="border-b border-zinc-200 text-zinc-500">
+                        <th className="px-2 py-2 text-right font-normal">経過月</th>
+                        <th className="px-2 py-2 text-right font-normal">年+月</th>
+                        <th className="px-2 py-2 text-left font-normal">AKB48</th>
+                        <th className="px-2 py-2 text-left font-normal">乃木坂46</th>
+                        <th className="px-2 py-2 text-left font-normal">櫻坂/欅坂46</th>
+                        <th className="px-2 py-2 text-left font-normal">日向坂46</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timelineRows.map((row, index) => (
+                        <tr key={`timeline-${row.elapsedMonths}-${index}`} className="border-b border-zinc-100 align-top">
+                          <td className="px-2 py-2 text-right text-zinc-500">{row.elapsedMonths}</td>
+                          <td className="px-2 py-2 text-right text-zinc-500">{row.elapsedLabel}</td>
+                          <td className="px-2 py-2">{row.akb48 ?? ""}</td>
+                          <td className="px-2 py-2">{row.nogizaka46 ?? ""}</td>
+                          <td className="px-2 py-2">{row.sakurazakaKeyaki46 ?? ""}</td>
+                          <td className="px-2 py-2">{row.hinatazaka46 ?? ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
 
-                return (
-                  <li key={creator.id}>
-                    <button
-                      type="button"
-                      onClick={() => handleCreatorSelect(creator)}
-                      className={`w-full py-1.5 text-left text-sm transition ${
-                        selectedCreator?.id === creator.id ? "text-zinc-950" : "text-zinc-600 hover:text-zinc-900"
-                      }`}
-                    >
-                      <span>{creator.name}</span>
-                      <span className="ml-2 text-xs text-zinc-500">
-                        関与 {stat.involvedSongs} / 作詞 {stat.lyricist} / 作曲 {stat.composer} / 編曲 {stat.arranger}
-                        {composerCrossStats.get(creator.id)
-                          ? ` / 越境 ${composerCrossStats.get(creator.id)?.composedGroups ?? 0}`
-                          : ""}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+          <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+            <Card title="楽曲詳細" subtitle={selectedSong ? selectedSong.title : "左の一覧から曲を選択"}>
+              {!selectedSong ? <p className="text-xs text-zinc-500">楽曲を選ぶと、歌詞・クレジット・フォーメーションを表示します。</p> : null}
+
+              {selectedSong ? (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <p className="mb-1 text-[11px] tracking-wide text-zinc-500">メタ情報</p>
+                    <p className="text-zinc-700">{formatSongMetaLine(selectedSong.groupName, selectedSong.releaseTitle, selectedSong.releaseYear)}</p>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-[11px] tracking-wide text-zinc-500">クレジット</p>
+                    <ul className="space-y-1">
+                      {selectedSong.credits.map((credit) => (
+                        <li key={`${credit.role}-${credit.creatorId}`}>
+                          <button
+                            type="button"
+                            onClick={() => openCreatorFromCredit(credit)}
+                            className="rounded-md border border-zinc-200 px-2 py-1 text-left text-zinc-700 hover:border-zinc-600"
+                          >
+                            <span className="mr-2 text-zinc-500">{CREDIT_ROLE_LABEL[credit.role]}</span>
+                            {credit.creatorName}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-[11px] tracking-wide text-zinc-500">フォーメーション</p>
+                    {selectedSong.formation.length > 0 ? (
+                      <ul className="max-h-32 space-y-1 overflow-y-auto">
+                        {selectedSong.formation.map((member, idx) => (
+                          <li key={`${member.memberName}-${idx}`} className="text-zinc-700">
+                            {member.memberName}（{POSITION_LABEL[member.positionType]}
+                            {member.rowNumber ? ` / ${member.rowNumber}列目` : ""}）
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-zinc-500">未取得</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-[11px] tracking-wide text-zinc-500">歌詞</p>
+                    {selectedSong.lyricsText ? (
+                      <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-2 text-[11px] leading-relaxed text-zinc-700">
+                        {selectedSong.lyricsText}
+                      </pre>
+                    ) : (
+                      <p className="text-zinc-500">歌詞データ未取得</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </Card>
+
+            <Card
+              title="作曲相関ネットワーク"
+              subtitle={
+                graphMode === "composer"
+                  ? selectedCreator
+                    ? `${selectedCreator.name}${
+                        selectedCreatorComposerStat
+                          ? ` / 作曲${selectedCreatorComposerStat.composedSongs}曲・${selectedCreatorComposerStat.composedGroups}グループ`
+                          : ""
+                      }`
+                    : "作曲家未選択"
+                  : "グループ内ネットワーク"
+              }
+              action={
+                <div className="flex items-center gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setGraphMode("composer")}
+                    className={`rounded px-2 py-1 ${
+                      graphMode === "composer" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-600"
+                    }`}
+                  >
+                    作曲家
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGraphMode("group")}
+                    className={`rounded px-2 py-1 ${
+                      graphMode === "group" ? "bg-zinc-900 text-white" : "border border-zinc-300 text-zinc-600"
+                    }`}
+                  >
+                    グループ
+                  </button>
+                </div>
+              }
+            >
+              <div className="mb-2 flex items-center gap-2 text-xs">
+                {graphMode === "group" ? (
+                  <select
+                    value={selectedGroupId ?? groups[0]?.id ?? ""}
+                    onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : undefined)}
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs"
+                  >
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                {graphLoading ? <span className="text-zinc-500">読み込み中...</span> : null}
+              </div>
+              <GraphView
+                graph={graph}
+                onNodeSongNavigate={(songId) => {
+                  handleSongSelect(songId).catch(console.error);
+                }}
+              />
+            </Card>
 
             {selectedCreator ? (
-              <div>
-                <p className="mb-2 text-xs tracking-wide text-zinc-500">
-                  楽曲 {creatorSongs.length}
-                  {selectedGroupId ? "（選択グループ内）" : "（全グループ）"}
-                </p>
-                {selectedCreatorComposerStat ? (
-                  <p className="mb-2 text-xs text-zinc-500">
-                    作曲 {selectedCreatorComposerStat.composedSongs}曲 / {selectedCreatorComposerStat.composedGroups}グループ
-                    {" / "}
-                    {selectedCreatorComposerStat.groupNames.join("・")}
-                  </p>
-                ) : (
-                  <p className="mb-2 text-xs text-zinc-500">この人物の作曲クレジットは未確認</p>
-                )}
-                <ul className="max-h-52 space-y-1 overflow-y-auto">
-                  {creatorSongs.map((song) => (
+              <Card title="選択作曲家の楽曲" subtitle={`${selectedCreatorSongs.length}曲`}>
+                <div className="mb-2 text-[11px] text-zinc-500">
+                  {selectedCreatorComposerStat
+                    ? `${selectedCreatorComposerStat.groupNames.join("・")}`
+                    : "作曲クレジット未確認"}
+                </div>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-xs">
+                  {selectedCreatorSongs.map((song) => (
                     <li key={`creator-song-${song.songId}`}>
                       <button
                         type="button"
                         onClick={() => {
                           handleSongSelect(song.songId).catch(console.error);
                         }}
-                        className="w-full py-1 text-left text-sm text-zinc-700 transition hover:text-zinc-900"
+                        className="w-full rounded-md border border-zinc-200 px-2 py-1 text-left text-zinc-700 hover:border-zinc-500"
                       >
                         {song.songTitle}
-                        <span className="ml-2 text-xs text-zinc-500">
-                          {formatSongMetaLine(song.groupName, song.releaseTitle, song.releaseYear)}
-                        </span>
+                        <span className="ml-1 text-zinc-500">{song.groupName}</span>
                       </button>
                     </li>
                   ))}
                 </ul>
-              </div>
-            ) : (
-              <p className="text-xs text-zinc-500">上の一覧から作曲家を選択してください。</p>
-            )}
-          </div>
-        </FloatingWindow>
-      ) : null}
-
-      {graphWindowOpen ? (
-        <FloatingWindow
-          title={graphMode === "composer" ? "作曲相関ネットワーク" : "グループネットワーク"}
-          subtitle={
-            graphMode === "composer"
-              ? selectedCreator
-                ? `${selectedCreator.name}${
-                    selectedCreatorComposerStat
-                      ? ` / 作曲${selectedCreatorComposerStat.composedSongs}曲・${selectedCreatorComposerStat.composedGroups}グループ`
-                      : ""
-                  }`
-                : "作曲家未選択"
-              : "グループ全体"
-          }
-          onClose={() => setGraphWindowOpen(false)}
-          placement={windowPlacement.graph}
-          onPlacementChange={(next) => moveWindow("graph", next)}
-          onRequestFront={() => bringWindowToFront("graph")}
-          className="w-[min(52rem,calc(100vw-1.5rem))]"
-        >
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setGraphMode("composer")}
-              className={`px-2 py-1 text-xs ${graphMode === "composer" ? "text-zinc-950" : "text-zinc-500 hover:text-zinc-800"}`}
-            >
-              作曲家
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedGroupId((prev) => prev ?? groups[0]?.id);
-                setGraphMode("group");
-              }}
-              className={`px-2 py-1 text-xs ${graphMode === "group" ? "text-zinc-950" : "text-zinc-500 hover:text-zinc-800"}`}
-            >
-              グループ
-            </button>
-
-            {graphMode === "group" ? (
-              <select
-                className="ml-2 border-0 border-b border-zinc-300 bg-transparent px-0 py-1 text-xs outline-none focus:border-zinc-900"
-                value={selectedGroupId ?? groups[0]?.id ?? ""}
-                onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : undefined)}
-              >
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
+              </Card>
             ) : null}
           </div>
-          {graphLoading ? <p className="mb-2 text-xs text-zinc-500">グラフを読み込み中...</p> : null}
-          <GraphView graph={graph} onNodeSongNavigate={handleGraphNodeSongNavigate} />
-        </FloatingWindow>
-      ) : null}
+        </div>
+
+        {loading ? <p className="text-sm text-zinc-500">Loading...</p> : null}
+      </div>
     </main>
   );
 }
